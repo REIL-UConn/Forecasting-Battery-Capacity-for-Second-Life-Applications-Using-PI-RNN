@@ -28,6 +28,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import random
+import os
 
 # =============================================================================
 # CONFIGURATION
@@ -452,8 +453,12 @@ def run_group_by_id(group_id):
     # Extract performance features and create a DataFrame
     df = extract_features(group_id, cccv_sols, charge_sols, rpt_sols, rpt_capacities, M1)
 
-    # Save the DataFrame to a pickle file (adjust the path as needed)
-    output_filename = f"CaseStudy2_Saved_Data/PBM_Simulations_{group_id}_Extracted_Features.pkl"
+
+    # Save the DataFrame to a pickle file 
+    output_folder = "CaseStudy2_Saved_Sim_Data"
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    output_filename = os.path.join(output_folder, f"PBM_Capacity_Simulation_{group_id}_Extracted_Features.pkl")
     df.to_pickle(output_filename)
     print(f"Feature data saved to {output_filename}")
     return df
