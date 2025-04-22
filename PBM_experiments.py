@@ -455,10 +455,10 @@ def run_group_by_id(group_id):
 
 
     # Save the DataFrame to a pickle file 
-    output_folder = "CaseStudy2_Saved_Sim_Data"
+    output_folder = "Simulated_PBM_data"
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
-    output_filename = os.path.join(output_folder, f"PBM_Capacity_Simulation_{group_id}_Extracted_Features.pkl")
+    output_filename = os.path.join(output_folder, f"{group_id}_PBM_Simulated.pkl")
     df.to_pickle(output_filename)
     print(f"Feature data saved to {output_filename}")
     return df
