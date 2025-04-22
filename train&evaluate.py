@@ -249,7 +249,7 @@ rmse_RNN, mae_RNN = calculate_rmse_mae(y_test_single, base_preds_single)
 rmse_PI_RNN, mae_PI_RNN = calculate_rmse_mae(y_test_single, pi_preds_single)
 
 # Plotting
-fig, axs = plt.subplots(2, 2, figsize=(12, 9), dpi=300, constrained_layout=True)
+fig, axs = plt.subplots(2, 2, figsize=(15, 9), dpi=300, constrained_layout=True)
 models = [(y_test, y_pred_pbm, 'PBM', 'lightgreen', 'o', rmse_PBM, mae_PBM),
           (y_true_GPR, y_pred_GPR, 'GPR', 'crimson', '^', rmse_GPR, mae_GPR),
           (y_test_single, base_preds_single, 'Baseline RNN', 'orange', 's', rmse_RNN, mae_RNN),
@@ -270,7 +270,7 @@ for ax, (true, pred, title, color, marker, rmse, mae) in zip(axs.flat, models):
     ax.grid(True, linestyle='--', alpha=0.5)
 
 # plt.savefig('Exported Figures/LFP_single_step_forecast_accuracy_revised_max_horizon.svg', dpi=300, format='svg')
-plt.tight_layout()
+# plt.tight_layout()
 plt.show()
 
 
