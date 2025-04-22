@@ -6,17 +6,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import random
-from models import train_pbm_surrogate, MultiStepPIRNN, BaselineMultiStepRNN
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+from models import train_pbm_surrogate_for_PI_RNN, MultiStepPIRNN, BaselineMultiStepRNN, GPRBaseline,  PBMSurrogate
 
 # —————————————————————————————
 # 0. Styling & reproducibility
 # —————————————————————————————
-plt.rcParams['font.family']    = 'Times New Roman'
-plt.rcParams['font.size']      = 20
-plt.rcParams['axes.labelsize'] = 18
-plt.rcParams['axes.titlesize'] = 24
-plt.rcParams['xtick.labelsize']= 18
-plt.rcParams['ytick.labelsize']= 18
+plt.rcParams['font.family'] = 'Times New Roman'
+plt.rcParams['font.size'] = 14
+plt.rcParams['axes.labelsize'] = 14
+plt.rcParams['axes.titlesize'] = 16
+plt.rcParams['xtick.labelsize'] = 12
+plt.rcParams['ytick.labelsize'] = 12
+marker_size = 40
+tick_range = np.arange(0.6, 1.3, 0.1)
 
 seed = 40
 np.random.seed(seed)
@@ -48,7 +51,7 @@ sim_features = [
 ]
 sim_target = "Capacity_Drop_Ah"
 
-rf_model, scaler_sim = train_pbm_surrogate(
+rf_model, scaler_sim = train_pbm_surrogate_for_PI_RNN(
     file_paths,
     sim_features,
     sim_target,
@@ -196,10 +199,8 @@ for epoch in range(1, num_epochs+1):
         print(f"[Baseline] {epoch}/{num_epochs} - train {loss:.4f}, val {val_loss:.4f}")
 
 
-#############################################
-# 6. Final Evaluation & Plotting (Single‑Step)
-#############################################
 
+# Evaluate Single-Step Forecasts for each model
 def evaluate_single_step(model, X_seq, y_seq):
     model.eval()
     with torch.no_grad():
@@ -210,31 +211,66 @@ def evaluate_single_step(model, X_seq, y_seq):
 X_test_seq, y_test_seq = create_sequences(X_test_s, y_test, forecast_steps)
 X_test_tensor = torch.tensor(X_test_seq, dtype=torch.float32)
 y_test_tensor = torch.tensor(y_test_seq, dtype=torch.float32)
-y_true = y_test_tensor[:, 0].cpu().numpy()
+y_test_single = y_test_tensor[:, 0].cpu().numpy()
 
-pi_preds   = evaluate_single_step(model_PI_RNN, X_test_tensor, y_test_tensor)
-base_preds = evaluate_single_step(baseline_model, X_test_tensor, y_test_tensor)
+# Predictions for RNN models
+base_preds_single = evaluate_single_step(baseline_model, X_test_tensor, y_test_tensor)
+pi_preds_single = evaluate_single_step(model_PI_RNN, X_test_tensor, y_test_tensor)
 
-def calc_metrics(y_t, y_p):
-    return np.sqrt(((y_t - y_p)**2).mean()), np.mean(np.abs(y_t - y_p))
+# Predictions for GPR Baseline
+model_gpr = GPRBaseline()
+y_true_GPR, y_pred_GPR = [], []
+for (group, cell), data in test_df.groupby(['Group', 'Cell']):
+    model_gpr.fit(data, (group, cell), initial_points=6)
+    yt, yp = model_gpr.predict(data, (group, cell), initial_points=6)
+    y_true_GPR.extend(yt)
+    y_pred_GPR.extend(yp)
 
-rmse_PI, mae_PI     = calc_metrics(y_true, pi_preds)
-rmse_base, mae_base = calc_metrics(y_true, base_preds)
+# PBM surrogate predictions
+sim_file_paths = [
+    'Simulated_PBM_data/G18_PBM_Simulated.pkl',
+    'Simulated_PBM_data/G16_PBM_Simulated.pkl',
+    'Simulated_PBM_data/G4_PBM_Simulated.pkl',
+    'Simulated_PBM_data/G3_PBM_Simulated.pkl',
+    'Simulated_PBM_data/G2_PBM_Simulated.pkl'
+]
+pbm_surrogate = PBMSurrogate(features, target)
+pbm_surrogate.fit(pbm_surrogate.load_simulation_data(sim_file_paths))
+y_pred_pbm = pbm_surrogate.predict(test_df)
 
-for preds, color, name, (rmse, mae) in [
-    (pi_preds,   'green',   'PI-RNN',     (rmse_PI,   mae_PI)),
-    (base_preds, 'orange', 'Baseline RNN',(rmse_base, mae_base))
-]:
-    plt.figure(figsize=(5, 4), dpi=300)
-    plt.scatter(y_true, preds, s=85, c=color, marker='s', edgecolors='w', alpha=0.8)
-    lims = [y_true.min(), y_true.max()]
-    plt.plot(lims, lims, 'k--', lw=2)
-    plt.xlabel('True Capacity')
-    plt.ylabel('Predicted Capacity')
-    plt.text(0.05, 0.95, f'MAE: {mae:.4f}\nRMSE: {rmse:.4f}',
-             transform=plt.gca().transAxes, va='top',
-             bbox=dict(facecolor='wheat', alpha=0.5))
-    plt.grid(True)
+# RMSE & MAE calculation function
+def calculate_rmse_mae(true, pred):
+    return np.sqrt(mean_squared_error(true, pred)), mean_absolute_error(true, pred)
 
+# Calculate metrics
+rmse_PBM, mae_PBM = calculate_rmse_mae(y_test, y_pred_pbm)
+rmse_GPR, mae_GPR = calculate_rmse_mae(y_true_GPR, y_pred_GPR)
+rmse_RNN, mae_RNN = calculate_rmse_mae(y_test_single, base_preds_single)
+rmse_PI_RNN, mae_PI_RNN = calculate_rmse_mae(y_test_single, pi_preds_single)
+
+# Plotting
+fig, axs = plt.subplots(2, 2, figsize=(12, 9), dpi=300, constrained_layout=True)
+models = [(y_test, y_pred_pbm, 'PBM', 'lightgreen', 'o', rmse_PBM, mae_PBM),
+          (y_true_GPR, y_pred_GPR, 'GPR', 'crimson', '^', rmse_GPR, mae_GPR),
+          (y_test_single, base_preds_single, 'Baseline RNN', 'orange', 's', rmse_RNN, mae_RNN),
+          (y_test_single, pi_preds_single, 'PI-RNN', 'green', 'D', rmse_PI_RNN, mae_PI_RNN)]
+
+for ax, (true, pred, title, color, marker, rmse, mae) in zip(axs.flat, models):
+    ax.scatter(true, pred, color=color, marker=marker, s=marker_size, alpha=0.7)
+    ax.plot([0.5, 1.3], [0.5, 1.3], 'k--', lw=1.5)
+    ax.set_title(title)
+    ax.set_xlabel("True Capacity (Ah)")
+    ax.set_ylabel("Predicted Capacity (Ah)")
+    ax.set_xticks(tick_range)
+    ax.set_yticks(tick_range)
+    ax.set_xlim([0.55, 1.25])
+    ax.set_ylim([0.55, 1.25])
+    ax.text(1.05, 0.6, f'MAE: {mae:.3f}\nRMSE: {rmse:.3f}',
+            bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'), fontsize=12)
+    ax.grid(True, linestyle='--', alpha=0.5)
+
+# plt.savefig('Exported Figures/LFP_single_step_forecast_accuracy_revised_max_horizon.svg', dpi=300, format='svg')
+plt.tight_layout()
 plt.show()
+
 
