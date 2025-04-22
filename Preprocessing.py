@@ -55,7 +55,8 @@ CHANNEL_MAPPINGS = {
 
 EXCEL_FILE      = "SOH estimation aging test management_update_10-15-2024.xlsx"
 OUTPUT_DIR      = "Processed_data"
-OUTPUT_TEMPLATE = "Batch{batch}_Cycling_and_RPT_merged.pkl"
+OUTPUT_TEMPLATE = "Processed_data_Cycling&RPT_Batch{batch}_Capacity_Forecasting_merged_update_Jan2025.pkl"
+
 
 
 # =============================================================================
