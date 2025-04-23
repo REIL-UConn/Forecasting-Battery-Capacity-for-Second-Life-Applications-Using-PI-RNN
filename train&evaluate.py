@@ -7,7 +7,12 @@ import numpy as np
 import pandas as pd
 import random
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-from models import train_pbm_surrogate_for_PI_RNN, MultiStepPIRNN, BaselineMultiStepRNN, GPRBaseline,  PBMSurrogate
+from data_utils import (
+    prepare_pbm_surrogate,
+    prepare_battery_sequences,
+    create_sequences
+)
+from models import MultiStepPIRNN, BaselineMultiStepRNN, GPRBaseline,  PBMSurrogate
 from collections import defaultdict
 import warnings
 
@@ -55,7 +60,7 @@ sim_features_full = [
 ]
 sim_target = "Capacity_Drop_Ah"
 
-rf_model, scaler_sim = train_pbm_surrogate_for_PI_RNN(
+rf_model, scaler_sim = prepare_pbm_surrogate(
     file_paths,
     sim_features_full,
     sim_target,
@@ -66,23 +71,8 @@ rf_model, scaler_sim = train_pbm_surrogate_for_PI_RNN(
 # 2. Prepare Battery Data & Create Sequences
 # —————————————————————————————
 
-def load_batch(path):
-    df = pd.read_pickle(path)
-    df.sort_values(['Channel Number','Group','Cell','RPT Number'], inplace=True)
-    df['capacity_drop'] = df.groupby(['Channel Number','Group','Cell'])['Capacity']\
-                             .diff().abs().fillna(0)
-    return df
-
-# load both batches
-batch1 = load_batch('Processed_data/Processed_data_Cycling&RPT_Batch1_Capacity_Forecasting_merged_update_Jan2025.pkl')
-batch2 = load_batch('Processed_data/Processed_data_Cycling&RPT_Batch2_Capacity_Forecasting_merged_update_Jan2025.pkl')
-
-# apply group filters
-test_df  = batch1[~batch1['Group'].isin(['G12'])].dropna()
-train_df = batch2[~batch2['Group'].isin(['G11','G14'])].dropna()
-
-# only cells C1/C3 for train/val
-train_df = train_df[train_df['Cell'].isin(['C1','C3'])]
+batch1_path  = 'Processed_data/Processed_data_Cycling&RPT_Batch1_Capacity_Forecasting_merged_update_Jan2025.pkl'
+batch2_path  = 'Processed_data/Processed_data_Cycling&RPT_Batch2_Capacity_Forecasting_merged_update_Jan2025.pkl'
 
 features = [
     'Ampere-Hour Throughput (Ah)',
@@ -95,39 +85,27 @@ features = [
 ]
 target = 'Capacity'
 
-# split train/val by unique cell ID
-train_df['Unique_Cell_ID'] = train_df['Group'] + '-' + train_df['Cell']
-ids = train_df['Unique_Cell_ID'].unique().tolist()
-val_ids = random.sample(ids, 3)
-validation_df = train_df[train_df['Unique_Cell_ID'].isin(val_ids)]
-training_df   = train_df[~train_df['Unique_Cell_ID'].isin(val_ids)]
-
-# extract and scale
-scaler = MinMaxScaler().fit(training_df[features])
-X_train_s = scaler.transform(training_df[features])
-X_val_s   = scaler.transform(validation_df[features])
-X_test_s  = scaler.transform(test_df[features])
-
-y_train = training_df[target].values
-y_val   = validation_df[target].values
-y_test  = test_df[target].values
-
-def create_sequences(arr, vals, steps):
-    Xs, ys = [], []
-    for i in range(len(arr) - steps + 1):
-        Xs.append(arr[i:i+steps])
-        ys.append(vals[i:i+steps])
-    return np.array(Xs), np.array(ys)
+X_train_s, y_train, X_val_s, y_val, X_test_s, y_test, scaler, test_df = prepare_battery_sequences(
+    batch1_path,
+    batch2_path,
+    features,
+    target,
+    val_cell_count=3,
+    seed=seed
+)
 
 forecast_steps = 10
-X_train_seq, y_train_seq = create_sequences(X_train_s, y_train, forecast_steps)
-X_val_seq,   y_val_seq   = create_sequences(X_val_s,   y_val,   forecast_steps)
+X_train_seq, y_train_seq = create_sequences(X_train_s, y_train,   forecast_steps)
+X_val_seq,   y_val_seq   = create_sequences(X_val_s,   y_val,     forecast_steps)
+X_test_seq,  y_test_seq  = create_sequences(X_test_s,  y_test,    forecast_steps)
 
-# tensors
+# Convert to tensors
 X_train_tensor = torch.tensor(X_train_seq, dtype=torch.float32)
 y_train_tensor = torch.tensor(y_train_seq, dtype=torch.float32)
 X_val_tensor   = torch.tensor(X_val_seq,   dtype=torch.float32)
 y_val_tensor   = torch.tensor(y_val_seq,   dtype=torch.float32)
+X_test_tensor  = torch.tensor(X_test_seq,  dtype=torch.float32)
+y_test_tensor  = torch.tensor(y_test_seq,  dtype=torch.float32)
 
 # —————————————————————————————
 # 3. Train PI‑RNN & Baseline RNN
