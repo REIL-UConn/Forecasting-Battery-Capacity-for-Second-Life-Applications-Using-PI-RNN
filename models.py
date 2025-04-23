@@ -1,11 +1,19 @@
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 import torch
 import torch.nn as nn
 import numpy as np
 from scipy.optimize import curve_fit
 import GPy
+
+
+# --------------------------
+# 1. Train PBM Surrogate (for PI-RNN)
+# Use 'train_pbm_surrogate_for_PI_RNN' to obtain a RandomForest surrogate (rf_model) and its scaler (scaler_sim).
+# This surrogate (rf_model, scaler_sim) is distinct from the PBMSurrogate class below and is used
+# internally to inject physics-based predictions into the PI-RNN model during training.
 
 def train_pbm_surrogate_for_PI_RNN(file_paths, sim_features, sim_target, seed=40):
     """
@@ -105,94 +113,177 @@ class BaselineMultiStepRNN(nn.Module):
 
 
 class GPRBaseline:
-    def __init__(self):
+    def __init__(self, initial_points=9):
+        # number of initial points to fit the empirical + GPR
+        self.initial_points   = initial_points  
         self.empirical_params = {}
-        self.gpr_models = {}
+        self.gpr_models       = {}
 
     @staticmethod
     def empirical_model(x, a, b, c):
         return a + b * np.exp(c * x)
 
-    def fit_empirical_model(self, X, y):
-        popt, _ = curve_fit(
-            self.empirical_model, 
-            X.flatten(), 
-            y.flatten(), 
-            maxfev=10000, 
-            p0=[np.mean(y), -1, -0.1]
-        )
-        return popt
-
-    def fit(self, cell_data, cell_key, initial_points=6):
+    def fit(self, cell_data, cell_key, initial_points=None):
+        """Fit empirical + GPR on the first `initial_points` cycles."""
+        ip = initial_points or self.initial_points
         cell_data = cell_data.sort_values('RPT Number')
-        first_points = cell_data.iloc[:initial_points]
+        train_df  = cell_data.iloc[:ip]
 
-        X_train = first_points[['RPT Number']].values
-        y_train = first_points[['Capacity']].values
+        X_train = train_df[['RPT Number']].values.flatten()
+        y_train = train_df['Capacity'].values
 
-        # Fit empirical model
-        params = self.fit_empirical_model(X_train, y_train)
-        self.empirical_params[cell_key] = params
+        # 1) empirical fit on first ip points
+        popt, _ = curve_fit(
+            self.empirical_model,
+            X_train, y_train,
+            p0=[np.mean(y_train), -1, -0.1],
+            bounds=([-10, -10, -10], [10, 10, 10]),
+            maxfev=10000
+        )
+        self.empirical_params[cell_key] = popt
 
-        # Fit GPR on residuals
-        y_empirical_train = self.empirical_model(X_train, *params)
-        residuals_train = y_train - y_empirical_train
+        # 2) fit GPR on residuals of those ip points
+        y_emp_train = self.empirical_model(X_train, *popt)
+        resid_train = (y_train - y_emp_train).reshape(-1, 1)
 
-        kernel = GPy.kern.RBF(input_dim=1)
-        gpr = GPy.models.GPRegression(X_train, residuals_train, kernel)
+        kernel = GPy.kern.RBF(input_dim=1, variance=1.0, lengthscale=1.0)
+        gpr   = GPy.models.GPRegression(
+                    X_train.reshape(-1,1), resid_train, kernel
+                )
         gpr.optimize()
 
         self.gpr_models[cell_key] = gpr
 
-    def predict(self, cell_data, cell_key, initial_points=6):
-        if cell_key not in self.empirical_params or cell_key not in self.gpr_models:
-            raise ValueError(f"No fitted model found for cell {cell_key}. Fit first.")
+    def predict(self, cell_data, cell_key, initial_points=None):
+        """Return full-length forecast beyond initial_points."""
+        ip = initial_points or self.initial_points
+        cell_data      = cell_data.sort_values('RPT Number')
+        forecast_df    = cell_data.iloc[ip:]
+        rpt_vals       = forecast_df['RPT Number'].values.reshape(-1,1)
+        y_true         = forecast_df['Capacity'].values
 
-        cell_data = cell_data.sort_values('RPT Number')
-        remaining_points = cell_data.iloc[initial_points:]
+        popt = self.empirical_params[cell_key]
+        y_emp = self.empirical_model(rpt_vals.flatten(), *popt)
+        gpr   = self.gpr_models[cell_key]
+        resid_pred, _ = gpr.predict(rpt_vals)
 
-        X_test = remaining_points[['RPT Number']].values
-        params = self.empirical_params[cell_key]
-        y_empirical_test = self.empirical_model(X_test, *params)
+        y_pred = y_emp + resid_pred.flatten()
+        return y_true, y_pred
 
-        gpr = self.gpr_models[cell_key]
-        residuals_pred, _ = gpr.predict(X_test)
+    def predict_horizon(self, cell_data, cell_key, steps, initial_points=None):
+        """
+        Return only the first `steps` points from predict().
+        e.g. for steps=3, returns y_true[:3], y_pred[:3].
+        """
+        y_true_full, y_pred_full = self.predict(
+            cell_data, cell_key, initial_points
+        )
+        # if fewer than `steps` points exist, it simply returns all of them
+        return y_true_full[:steps], y_pred_full[:steps]
 
-        y_final_pred = y_empirical_test + residuals_pred
-        y_true = remaining_points[['Capacity']].values.flatten()
 
-        return y_true, y_final_pred.flatten()
+# models.py (excerpt)
 
-
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import MinMaxScaler
 
 class PBMSurrogate:
-    def __init__(self, features, target, n_estimators=50, random_state=40):
-        self.features = features
-        self.target = target
-        self.scaler = MinMaxScaler()
-        self.model = RandomForestRegressor(n_estimators=n_estimators, random_state=random_state)
+    def __init__(
+        self,
+        features,
+        capacity_target="Capacity",
+        drop_target="Capacity_Drop_Ah",
+        n_estimators=50,
+        random_state=40
+    ):
+        self.features        = features
+        self.capacity_target = capacity_target
+        self.drop_target     = drop_target
+
+        # single-step capacity surrogate
+        self.scaler_cap = MinMaxScaler()
+        self.model_cap  = RandomForestRegressor(
+                              n_estimators=n_estimators,
+                              random_state=random_state
+                          )
+
+        # single-step drop surrogate
+        self.scaler_drop = MinMaxScaler()
+        self.model_drop  = RandomForestRegressor(
+                              n_estimators=n_estimators,
+                              random_state=random_state
+                          )
+
+        # containers for multi-step drop surrogates
+        self.scalers_h   = {}  # horizon h → MinMaxScaler
+        self.models_h    = {}  # horizon h → RandomForestRegressor
 
     def load_simulation_data(self, file_paths):
         sim_dfs = [pd.read_pickle(fp) for fp in file_paths]
-        sim_data_df = pd.concat(sim_dfs, ignore_index=True)
-        return sim_data_df
+        return pd.concat(sim_dfs, ignore_index=True)
 
-    def fit(self, sim_data_df):
-        X_sim = sim_data_df[self.features].values
-        y_sim = sim_data_df[self.target].values
-        X_sim_scaled = self.scaler.fit_transform(X_sim)
-        self.model.fit(X_sim_scaled, y_sim)
+    # -- Single-step capacity model --
+    def fit_capacity(self, sim_df):
+        X = sim_df[self.features].values
+        y = sim_df[self.capacity_target].values
+        Xs = self.scaler_cap.fit_transform(X)
+        self.model_cap.fit(Xs, y)
 
-    def predict(self, df):
-        X_test = df[self.features].values
-        X_test_scaled = self.scaler.transform(X_test)
-        return self.model.predict(X_test_scaled)
+    def predict_capacity(self, df):
+        X  = df[self.features].values
+        Xs = self.scaler_cap.transform(X)
+        return self.model_cap.predict(Xs)
 
-    def evaluate(self, df):
-        y_true = df[self.target].values
-        y_pred = self.predict(df)
-        mae = mean_absolute_error(y_true, y_pred)
-        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-        return mae, rmse
+    # -- Single-step drop model --
+    def fit_drop(self, sim_df):
+        X = sim_df[self.features].values
+        y = sim_df[self.drop_target].values
+        Xs = self.scaler_drop.fit_transform(X)
+        self.model_drop.fit(Xs, y)
+
+    def predict_drop(self, df):
+        X  = df[self.features].values
+        Xs = self.scaler_drop.transform(X)
+        return self.model_drop.predict(Xs)
+
+    # -- Multi-step drop surrogate (horizon‐specific) --
+    def fit_horizon(self, sim_df, h):
+        Xh, yh = [], []
+        for i in range(len(sim_df) - h):
+            block = sim_df[self.features].iloc[i : i+h].values.flatten()
+            Xh.append(block)
+            yh.append(sim_df[self.drop_target].iloc[i + h])
+        Xh = np.vstack(Xh); yh = np.array(yh)
+
+        scaler_h = MinMaxScaler().fit(Xh)
+        model_h  = RandomForestRegressor(
+                       n_estimators=self.model_drop.n_estimators,
+                       random_state=self.model_drop.random_state
+                   )
+        model_h.fit(scaler_h.transform(Xh), yh)
+
+        self.scalers_h[h] = scaler_h
+        self.models_h[h]  = model_h
+
+    def predict_capacity_multi(self, df, steps):
+        """
+        Recursive multi-step capacity forecast:
+        capacity_pred[t+steps] = capacity_true[t] - sum_{j=0..steps-1} drop_pred[t+j]
+        Returns a length-(len(df)-steps) array aligned to df.Capacity.values[steps:].
+        """
+        caps = df[self.capacity_target].values
+        n    = len(df)
+        y_pred = []
+        for i in range(steps, n):
+            cap_est = caps[i-steps]
+            for j in range(steps):
+                row = df[self.features].iloc[i-steps+j : i-steps+j+1]
+                cap_est -= self.model_drop.predict(self.scaler_drop.transform(row))
+            y_pred.append(cap_est)
+        return np.array(y_pred)
+
+
 
 

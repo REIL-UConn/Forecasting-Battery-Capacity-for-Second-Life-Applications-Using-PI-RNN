@@ -8,6 +8,10 @@ import pandas as pd
 import random
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from models import train_pbm_surrogate_for_PI_RNN, MultiStepPIRNN, BaselineMultiStepRNN, GPRBaseline,  PBMSurrogate
+from collections import defaultdict
+import warnings
+
+warnings.filterwarnings('ignore')
 
 # —————————————————————————————
 # 0. Styling & reproducibility
@@ -39,7 +43,7 @@ file_paths = [
     'Simulated_PBM_data/G2_PBM_Simulated.pkl'
 ]
 
-sim_features = [
+sim_features_full = [
     'Ampere-Hour Throughput (Ah)',
     'Total Time Elapsed (h)',
     'Total Absolute Time From Start (h)',
@@ -53,14 +57,14 @@ sim_target = "Capacity_Drop_Ah"
 
 rf_model, scaler_sim = train_pbm_surrogate_for_PI_RNN(
     file_paths,
-    sim_features,
+    sim_features_full,
     sim_target,
     seed=seed
 )
 
-#############################################
-# 4. Prepare Battery Data & Create Sequences
-#############################################
+# —————————————————————————————
+# 2. Prepare Battery Data & Create Sequences
+# —————————————————————————————
 
 def load_batch(path):
     df = pd.read_pickle(path)
@@ -125,9 +129,9 @@ y_train_tensor = torch.tensor(y_train_seq, dtype=torch.float32)
 X_val_tensor   = torch.tensor(X_val_seq,   dtype=torch.float32)
 y_val_tensor   = torch.tensor(y_val_seq,   dtype=torch.float32)
 
-#############################################
-# 5. Train PI‑RNN & Baseline RNN
-#############################################
+# —————————————————————————————
+# 3. Train PI‑RNN & Baseline RNN
+# —————————————————————————————
 # Both models use input_size = len(features) + 1 = 7 + 1 = 8.
 input_size = len(features) + 1
 hidden_size = 50
@@ -199,8 +203,9 @@ for epoch in range(1, num_epochs+1):
         print(f"[Baseline] {epoch}/{num_epochs} - train {loss:.4f}, val {val_loss:.4f}")
 
 
-
-# Evaluate Single-Step Forecasts for each model
+# —————————————————————————————
+# 4. Evaluate Single-Step Forecasts 
+# —————————————————————————————
 def evaluate_single_step(model, X_seq, y_seq):
     model.eval()
     with torch.no_grad():
@@ -227,30 +232,50 @@ for (group, cell), data in test_df.groupby(['Group', 'Cell']):
     y_pred_GPR.extend(yp)
 
 # PBM surrogate predictions
-sim_file_paths = [
-    'Simulated_PBM_data/G18_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G16_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G4_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G3_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G2_PBM_Simulated.pkl'
-]
-pbm_surrogate = PBMSurrogate(features, target)
-pbm_surrogate.fit(pbm_surrogate.load_simulation_data(sim_file_paths))
-y_pred_pbm = pbm_surrogate.predict(test_df)
+
+# for single-step capacity forecasting, we *exclude* 'Capacity' itself
+sim_features = [f for f in sim_features_full if f != 'Capacity']
+# sim_target would be 'Capacity' here
+sim_target = 'Capacity'
+
+# 1) Instantiate & train PBM surrogate
+pbm = PBMSurrogate(
+    features=sim_features,
+    capacity_target="Capacity",
+    drop_target="Capacity_Drop_Ah",
+    n_estimators=50,
+    random_state=40
+)
+sim_df = pbm.load_simulation_data(file_paths)
+
+# 1a) Single-step capacity model
+pbm.fit_capacity(sim_df)
+
+# 1b) Drop model + multi-step surrogates
+pbm.fit_drop(sim_df)
+for h in range(2, 11):
+    pbm.fit_horizon(sim_df, h)
+
+# ------------------------
+# Single-Step Evaluation
+# ------------------------
+y_test_pbm = test_df["Capacity"].values
+y_pred_pbm = pbm.predict_capacity(test_df)
+
 
 # RMSE & MAE calculation function
 def calculate_rmse_mae(true, pred):
     return np.sqrt(mean_squared_error(true, pred)), mean_absolute_error(true, pred)
 
 # Calculate metrics
-rmse_PBM, mae_PBM = calculate_rmse_mae(y_test, y_pred_pbm)
+rmse_PBM, mae_PBM = calculate_rmse_mae(y_test_pbm, y_pred_pbm)
 rmse_GPR, mae_GPR = calculate_rmse_mae(y_true_GPR, y_pred_GPR)
 rmse_RNN, mae_RNN = calculate_rmse_mae(y_test_single, base_preds_single)
 rmse_PI_RNN, mae_PI_RNN = calculate_rmse_mae(y_test_single, pi_preds_single)
 
 # Plotting
 fig, axs = plt.subplots(2, 2, figsize=(15, 9), dpi=300, constrained_layout=True)
-models = [(y_test, y_pred_pbm, 'PBM', 'lightgreen', 'o', rmse_PBM, mae_PBM),
+models = [(y_test_pbm, y_pred_pbm, 'PBM', 'lightgreen', 'o', rmse_PBM, mae_PBM),
           (y_true_GPR, y_pred_GPR, 'GPR', 'crimson', '^', rmse_GPR, mae_GPR),
           (y_test_single, base_preds_single, 'Baseline RNN', 'orange', 's', rmse_RNN, mae_RNN),
           (y_test_single, pi_preds_single, 'PI-RNN', 'green', 'D', rmse_PI_RNN, mae_PI_RNN)]
@@ -270,7 +295,72 @@ for ax, (true, pred, title, color, marker, rmse, mae) in zip(axs.flat, models):
     ax.grid(True, linestyle='--', alpha=0.5)
 
 # plt.savefig('Exported Figures/LFP_single_step_forecast_accuracy_revised_max_horizon.svg', dpi=300, format='svg')
-# plt.tight_layout()
 plt.show()
 
 
+
+
+# 1) Define horizons and container
+horizons   = list(range(2, 11))    # forecast steps 2…10
+rmse_multi = defaultdict(list)     # keys: 'PBM','GPR','RNN','PI-RNN'
+
+# PBM multi-step:
+for h in horizons:
+    y_true_h = test_df["Capacity"].values[h:]
+    y_pred_h = pbm.predict_capacity_multi(test_df, steps=h)
+    rmse_multi["PBM"].append(np.sqrt(mean_squared_error(y_true_h, y_pred_h)))
+
+# 3) GPR baseline multi-step
+gpr = GPRBaseline(initial_points=9)
+
+# fit once per cell
+for (grp, cell), df_cell in test_df.groupby(['Group','Cell']):
+    gpr.fit(df_cell, (grp, cell))
+
+# then collect per-horizon RMSE
+for h in horizons:
+    y_true_all, y_pred_all = [], []
+    for (grp, cell), df_cell in test_df.groupby(['Group','Cell']):
+        yt, yp = gpr.predict_horizon(df_cell, (grp, cell), steps=h)
+        y_true_all.extend(yt)
+        y_pred_all.extend(yp)
+    rmse_multi['GPR'].append(np.sqrt(mean_squared_error(y_true_all, y_pred_all)))
+
+# 4) RNN & PI-RNN multi-step
+baseline_model.eval()
+model_PI_RNN.eval()
+with torch.no_grad():
+    for h in horizons:
+        out_base = baseline_model(
+            X_test_tensor,
+            y_test_tensor[:, :1],
+            forecast_steps=h
+        ).cpu().numpy().flatten()
+        out_pi   = model_PI_RNN(
+            X_test_tensor,
+            y_test_tensor[:, :1],
+            forecast_steps=h
+        ).cpu().numpy().flatten()
+        t_true = y_test_tensor[:, :h].cpu().numpy().flatten()
+
+        rmse_multi['RNN'].append(np.sqrt(mean_squared_error(t_true, out_base)))
+        rmse_multi['PI-RNN'].append(np.sqrt(mean_squared_error(t_true, out_pi)))
+
+# 5) Plotting
+x     = np.arange(len(horizons))
+width = 0.2
+
+plt.figure(figsize=(10,5), dpi=300)
+plt.bar(x - 1.5*width, rmse_multi['PBM'],   width, label='PBM',   color='lightgreen')
+plt.bar(x - 0.5*width, rmse_multi['GPR'],   width, label='GPR',   color='crimson')
+plt.bar(x + 0.5*width, rmse_multi['RNN'],   width, label='RNN',   color='orange')
+plt.bar(x + 1.5*width, rmse_multi['PI-RNN'],width, label='PI-RNN',color='green')
+
+plt.xlabel('Forecasting Steps', fontsize=14)
+plt.ylabel('RMSE (Ah)',           fontsize=14)
+plt.xticks(x, horizons)
+plt.legend()
+plt.grid(axis='y', linestyle='--', alpha=0.5)
+plt.tight_layout()
+# plt.savefig('Exported Figures/LFP_multi_step_forecast.svg', dpi=300, format='svg')
+plt.show()
