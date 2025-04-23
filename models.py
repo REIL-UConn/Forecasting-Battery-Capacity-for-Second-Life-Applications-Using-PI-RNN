@@ -32,7 +32,9 @@ def train_pbm_surrogate_for_PI_RNN(file_paths, sim_features, sim_target, seed=40
     rf.fit(X_scaled, y)
     return rf, scaler
 
-
+# --------------------------
+### PI-RNN  
+# --------------------------
 class CustomRNNCellWithSurrogate(nn.Module):
     def __init__(self, input_size, hidden_size, surrogate_model):
         super(CustomRNNCellWithSurrogate, self).__init__()
@@ -76,6 +78,9 @@ class MultiStepPIRNN(nn.Module):
         return torch.stack(all_predictions, dim=1)
 
 
+# --------------------------
+### Baseline RNN  
+# --------------------------
 class BaselineRNNCell(nn.Module):
     def __init__(self, input_size, hidden_size):
         super(BaselineRNNCell, self).__init__()
@@ -111,7 +116,9 @@ class BaselineMultiStepRNN(nn.Module):
         return torch.stack(predictions, dim=1)
     
 
-
+# --------------------------
+### Baseline GPR
+# --------------------------
 class GPRBaseline:
     def __init__(self, initial_points=9):
         # number of initial points to fit the empirical + GPR
@@ -181,14 +188,9 @@ class GPRBaseline:
         # if fewer than `steps` points exist, it simply returns all of them
         return y_true_full[:steps], y_pred_full[:steps]
 
-
-# models.py (excerpt)
-
-import numpy as np
-import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import MinMaxScaler
-
+# --------------------------
+### PBM Surrogate
+# --------------------------
 class PBMSurrogate:
     def __init__(
         self,
