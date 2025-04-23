@@ -20,16 +20,29 @@ def train_pbm_surrogate_for_PI_RNN(file_paths, sim_features, sim_target, seed=40
     Load simulation data, fit a RandomForest surrogate.
     Returns: (surrogate_model, scaler_sim)
     """
+    # 1) load & concat
     sim_dfs = [pd.read_pickle(fp) for fp in file_paths]
-    sim_df = pd.concat(sim_dfs, ignore_index=True)
+    sim_df  = pd.concat(sim_dfs, ignore_index=True)
+
+    # 2) features / target
     X = sim_df[sim_features].values
     y = sim_df[sim_target].values
 
+    # 3) scale
     scaler = MinMaxScaler()
     X_scaled = scaler.fit_transform(X)
 
+    # 4) train RF
     rf = RandomForestRegressor(n_estimators=200, random_state=seed)
     rf.fit(X_scaled, y)
+
+    # 5) monkey-patch predict to zero out NaNs
+    _orig_predict = rf.predict
+    def _safe_predict(X_new):
+        X_clean = np.nan_to_num(X_new, nan=0.0)
+        return _orig_predict(X_clean)
+    rf.predict = _safe_predict
+
     return rf, scaler
 
 # --------------------------
