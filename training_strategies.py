@@ -1,22 +1,23 @@
-# training_strategies.py
-
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.preprocessing import MinMaxScaler
-import matplotlib.pyplot as plt
 import numpy as np
 import random
 import pandas as pd
+import matplotlib.pyplot as plt
+from copy import deepcopy
+
 from data_utils import (
-    prepare_pbm_surrogate,
-    prepare_battery_sequences,
-    create_sequences
+    PBM_SIM_PATHS,
+    PBM_FEATURES,
+    PBM_TARGET,
+    BATTERY_FEATURES,
+    BATTERY_TARGET,
+    load_battery_data,
+    make_sequences
 )
-from models import (
-    MultiStepPIRNN,
-    BaselineMultiStepRNN
-)
+from models import train_pbm_surrogate_for_PI_RNN, MultiStepPIRNN, BaselineMultiStepRNN
 
 # —————————————————————————————
 # 0. Styling & Reproducibility
@@ -26,268 +27,268 @@ plt.rcParams['font.size']   = 18
 
 seed = 40
 np.random.seed(seed)
-torch.manual_seed(seed)
 random.seed(seed)
+torch.manual_seed(seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark     = False
 
 # —————————————————————————————
-# 1. Train PBM surrogate for PI-RNN injection
+# 1. Train PBM surrogate (capacity-drop)
 # —————————————————————————————
-file_paths = [
-    'Simulated_PBM_data/G18_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G16_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G4_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G3_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G2_PBM_Simulated.pkl'
-]
-sim_features_full = [
-    'Ampere-Hour Throughput (Ah)',
-    'Total Time Elapsed (h)',
-    'Total Absolute Time From Start (h)',
-    'Time Below 3A (h)',
-    'Time Between 3A and 4A (h)',
-    'Time Above 4A (h)',
-    'RPT Number',
-    'Capacity'
-]
-sim_target = "Capacity_Drop_Ah"
-
-rf_model, scaler_sim = prepare_pbm_surrogate(
-    file_paths,
-    sim_features_full,
-    sim_target,
+rf_model, scaler_sim = train_pbm_surrogate_for_PI_RNN(
+    PBM_SIM_PATHS,
+    PBM_FEATURES,
+    PBM_TARGET,
     seed=seed
 )
 
 # —————————————————————————————
-# 2. Prepare Battery Data & Create Sequences
+# 2. Load & preprocess battery data
 # —————————————————————————————
-features = [
-    'Ampere-Hour Throughput (Ah)',
-    'Total Absolute Time From Start (h)',
-    'Total Time Elapsed (h)',
-    'Time Below 3A (h)',
-    'Time Between 3A and 4A (h)',
-    'Time Above 4A (h)',
-    'RPT Number'
-]
-target = 'Capacity'
-batch1_path = 'Processed_data/Processed_data_Cycling&RPT_Batch1_Capacity_Forecasting_merged_update_Jan2025.pkl'
-batch2_path = 'Processed_data/Processed_data_Cycling&RPT_Batch2_Capacity_Forecasting_merged_update_Jan2025.pkl'
-
 X_train_s, y_train, X_val_s, y_val, X_test_s, y_test, scaler, test_df = \
-    prepare_battery_sequences(
-        batch1_path, batch2_path,
-        features, target,
-        val_cell_count=3,
-        seed=seed
-    )
+    load_battery_data(seed=seed)
+features = BATTERY_FEATURES
+target   = BATTERY_TARGET
 
-# helper to build sequences
-def make_seq(X_s, y, h):
-    return create_sequences(X_s, y, h)
-
-# horizons for scenarios
+# —————————————————————————————
+# 3. Build sequences for scenarios
+# —————————————————————————————
 h1, h2, h3 = 7, 1, 10
-X_tr1, y_tr1 = make_seq(X_train_s, y_train, h1)
-X_va1, y_va1 = make_seq(X_val_s,   y_val,   h1)
-X_tr2, y_tr2 = make_seq(X_train_s, y_train, h2)
-X_va2, y_va2 = make_seq(X_val_s,   y_val,   h2)
-X_tr3, y_tr3 = make_seq(X_train_s, y_train, h3)
-X_va3, y_va3 = make_seq(X_val_s,   y_val,   h3)
+X_tr1, y_tr1 = make_sequences(X_train_s, y_train, h1)
+X_va1, y_va1 = make_sequences(X_val_s,   y_val,   h1)
+X_tr2, y_tr2 = make_sequences(X_train_s, y_train, h2)
+X_va2, y_va2 = make_sequences(X_val_s,   y_val,   h2)
+X_tr3, y_tr3 = make_sequences(X_train_s, y_train, h3)
+X_va3, y_va3 = make_sequences(X_val_s,   y_val,   h3)
 
-# to tensors
-def t(x): return torch.tensor(x, dtype=torch.float32)
-X_tr1_t, y_tr1_t = t(X_tr1), t(y_tr1)
-X_va1_t, y_va1_t = t(X_va1), t(y_va1)
-X_tr2_t, y_tr2_t = t(X_tr2), t(y_tr2)
-X_va2_t, y_va2_t = t(X_va2), t(y_va2)
-X_tr3_t, y_tr3_t = t(X_tr3), t(y_tr3)
-X_va3_t, y_va3_t = t(X_va3), t(y_va3)
+def T(x): return torch.tensor(x, dtype=torch.float32)
+X_tr1_t, y_tr1_t = T(X_tr1), T(y_tr1)
+X_va1_t, y_va1_t = T(X_va1), T(y_va1)
+X_tr2_t, y_tr2_t = T(X_tr2), T(y_tr2)
+X_va2_t, y_va2_t = T(X_va2), T(y_va2)
+X_tr3_t, y_tr3_t = T(X_tr3), T(y_tr3)
+X_va3_t, y_va3_t = T(X_va3), T(y_va3)
 
 # —————————————————————————————
-# 3. Training helper
+# 4. Scenario-training helper
 # —————————————————————————————
-def train_scenario(model, optimizer, Xtr, ytr, Xva, yva, h, name):
+def train_scenario(model, optimizer, Xtr, ytr, Xva, yva, horizon, name):
     best_val, no_imp = float('inf'), 0
     criterion = nn.MSELoss()
     for ep in range(1, 2501):
         model.train(); optimizer.zero_grad()
-        p = model(Xtr, ytr[:, :1], forecast_steps=h)
-        loss = criterion(p, ytr[:, :h])
+        seed_cap = ytr[:, :1]
+        preds    = model(Xtr, seed_cap, forecast_steps=horizon)
+        loss     = criterion(preds, ytr[:, :horizon])
         loss.backward(); optimizer.step()
 
         model.eval()
         with torch.no_grad():
-            vp = model(Xva, yva[:, :1], forecast_steps=h)
-            vloss = criterion(vp, yva[:, :h])
+            vpred = model(Xva, yva[:, :1], forecast_steps=horizon)
+            vloss = criterion(vpred, yva[:, :horizon])
 
         if vloss < best_val:
             best_val, no_imp = vloss, 0
         else:
             no_imp += 1
             if no_imp >= 150:
-                print(f"[{name}] early stop @epoch {ep}")
+                print(f"[{name}] early stop @ epoch {ep}")
                 break
 
-        if ep % 50 == 0:
-            print(f"[{name}] Epoch {ep} train={loss:.4f} val={vloss:.4f}")
+        if ep % 100 == 0:
+            print(f"[{name}] Epoch {ep}: train={loss:.4f} val={vloss:.4f}")
 
 # —————————————————————————————
-# 4. Scenario 1: max-horizon (h1)
+# 5. Scenario 1: 7-step fixed-horizon
 # —————————————————————————————
-np.random.seed(seed); torch.manual_seed(seed); random.seed(seed)
-input_size  = len(features)+1
+input_size  = len(features) + 1
 hidden_size = 50
+
+torch.manual_seed(seed); random.seed(seed); np.random.seed(seed)
 pi1  = MultiStepPIRNN(input_size, hidden_size, rf_model)
 opt1 = optim.Adam(pi1.parameters(), lr=1e-3)
 train_scenario(pi1, opt1, X_tr1_t, y_tr1_t, X_va1_t, y_va1_t, h1, "PI-RNN S1")
 
-np.random.seed(seed); torch.manual_seed(seed); random.seed(seed)
-b1  = BaselineMultiStepRNN(input_size, hidden_size)
-ob1 = optim.Adam(b1.parameters(), lr=1e-3)
-train_scenario(b1, ob1, X_tr1_t, y_tr1_t, X_va1_t, y_va1_t, h1, "Base-RNN S1")
+torch.manual_seed(seed); random.seed(seed); np.random.seed(seed)
+b1   = BaselineMultiStepRNN(input_size, hidden_size)
+ob1  = optim.Adam(b1.parameters(), lr=1e-3)
+train_scenario(b1,  ob1,  X_tr1_t, y_tr1_t, X_va1_t, y_va1_t, h1, "Base-RNN S1")
 
 # —————————————————————————————
-# 5. Scenario 2: recursive single-step (h2)
+# 6. Scenario 2: recursive single-step
 # —————————————————————————————
-np.random.seed(seed); torch.manual_seed(seed); random.seed(seed)
+torch.manual_seed(seed); random.seed(seed); np.random.seed(seed)
 pi2  = MultiStepPIRNN(input_size, hidden_size, rf_model)
 opt2 = optim.Adam(pi2.parameters(), lr=1e-3)
 train_scenario(pi2, opt2, X_tr2_t, y_tr2_t, X_va2_t, y_va2_t, h2, "PI-RNN S2")
 
-np.random.seed(seed); torch.manual_seed(seed); random.seed(seed)
-b2  = BaselineMultiStepRNN(input_size, hidden_size)
-ob2 = optim.Adam(b2.parameters(), lr=1e-3)
-train_scenario(b2, ob2, X_tr2_t, y_tr2_t, X_va2_t, y_va2_t, h2, "Base-RNN S2")
+torch.manual_seed(seed); random.seed(seed); np.random.seed(seed)
+b2   = BaselineMultiStepRNN(input_size, hidden_size)
+ob2  = optim.Adam(b2.parameters(), lr=1e-3)
+train_scenario(b2,  ob2,  X_tr2_t, y_tr2_t, X_va2_t, y_va2_t, h2, "Base-RNN S2")
 
 # —————————————————————————————
-# 6. Scenario 3: longer-horizon (h3)
+# 7. Scenario 3: 10-step max-horizon
 # —————————————————————————————
-np.random.seed(seed); torch.manual_seed(seed); random.seed(seed)
+torch.manual_seed(seed); random.seed(seed); np.random.seed(seed)
 pi3  = MultiStepPIRNN(input_size, hidden_size, rf_model)
 opt3 = optim.Adam(pi3.parameters(), lr=1e-3)
 train_scenario(pi3, opt3, X_tr3_t, y_tr3_t, X_va3_t, y_va3_t, h3, "PI-RNN S3")
 
-np.random.seed(seed); torch.manual_seed(seed); random.seed(seed)
-b3  = BaselineMultiStepRNN(input_size, hidden_size)
-ob3 = optim.Adam(b3.parameters(), lr=1e-3)
-train_scenario(b3, ob3, X_tr3_t, y_tr3_t, X_va3_t, y_va3_t, h3, "Base-RNN S3")
+torch.manual_seed(seed); random.seed(seed); np.random.seed(seed)
+b3   = BaselineMultiStepRNN(input_size, hidden_size)
+ob3  = optim.Adam(b3.parameters(), lr=1e-3)
+train_scenario(b3,  ob3,  X_tr3_t, y_tr3_t, X_va3_t, y_va3_t, h3, "Base-RNN S3")
 
 # —————————————————————————————
-# 7. Recursive forecast helper (for S2)
+# 7.1 Save trained S3 models
 # —————————————————————————————
-def recursive_forecast(model, Xf, seed_cap, steps):
-    model.eval()
-    h = torch.zeros(1, model.hidden_size)
-    cap = seed_cap.clone()
-    preds = []
-    with torch.no_grad():
-        for t in range(steps):
-            inp = torch.cat((Xf[:, t, :], cap), dim=1)
-            h, drop = model.rnn_cell(inp, h)
-            cap = cap - drop
-            preds.append(cap.squeeze(-1))
-    return torch.stack(preds,1)
+model_dir = 'saved_models'
+os.makedirs(model_dir, exist_ok=True)
+torch.save(pi3.state_dict(), f"{model_dir}/pi3_scenario3.pth")
+torch.save(b3.state_dict(),  f"{model_dir}/b3_scenario3.pth")
+print(f"Saved PI-RNN S3 and Baseline S3 to {model_dir}")
 
+# —————————————————————————————
+# 8. Visualization + fine-tuning on first 5 points
+# —————————————————————————————
 def visualize_all_scenarios(
     forecast_rpt, forecast_steps, scaler, features, target,
-    Group='G3', Cell='C1'
+    Group='G3', Cell='C1', return_predictions=False,
+    fine_tune=False, fine_tune_epochs=20
 ):
-    """
-    Three-panel plot of PI-RNN vs Baseline RNN forecasting strategies,
-    exactly matching your original formatting.
-    """
-    # 1) select & sort cell data
-    df = test_df[(test_df['Group']==Group) & (test_df['Cell']==Cell)].copy()
-    df.sort_values('RPT Number', inplace=True); df.reset_index(drop=True, inplace=True)
+    # pick original models or clones
+    if fine_tune:
+        m1, m2, m3 = deepcopy(pi1), deepcopy(pi2), deepcopy(pi3)
+        b1_, b2_, b3_ = deepcopy(b1), deepcopy(b2), deepcopy(b3)
+    else:
+        m1, m2, m3 = pi1, pi2, pi3
+        b1_, b2_, b3_ = b1, b2, b3
 
-    # 2) insert RPT=23 if missing (interpolate)
-    if 23 not in df['RPT Number'].values:
-        if {22,24}.issubset(df['RPT Number'].values):
-            v22 = df.loc[df['RPT Number']==22, target].item()
-            v24 = df.loc[df['RPT Number']==24, target].item()
-            extra = pd.DataFrame({'RPT Number':[23], target:[(v22+v24)/2]})
-            df = pd.concat([df, extra], ignore_index=True)
-            df.sort_values('RPT Number', inplace=True); df.reset_index(drop=True, inplace=True)
+    df = test_df[(test_df['Group']==Group)&(test_df['Cell']==Cell)].copy()
+    df.sort_values('RPT Number', inplace=True)
+    df.reset_index(drop=True, inplace=True)
 
-    # 3) split into available vs future
-    available_df = df[df['RPT Number'] <= forecast_rpt]
-    future_df    = df[df['RPT Number'] >  forecast_rpt]
+    if 23 not in df['RPT Number'].values and {22,24}.issubset(df['RPT Number'].values):
+        v22 = df.loc[df['RPT Number']==22, target].item()
+        v24 = df.loc[df['RPT Number']==24, target].item()
+        extra = pd.DataFrame({'RPT Number':[23], target:[(v22+v24)/2]})
+        df = pd.concat([df, extra], ignore_index=True)
+        df.sort_values('RPT Number', inplace=True)
+        df.reset_index(drop=True, inplace=True)
 
-    # 4) clip to forecast_steps
-    forecast_window_df = future_df.iloc[:forecast_steps]
-    n_steps = len(forecast_window_df)
+    avail = df[df['RPT Number'] <= forecast_rpt]
+    fut   = df[df['RPT Number'] >  forecast_rpt]
+    fw    = fut.iloc[:forecast_steps]
+    n     = len(fw)
 
-    # 5) build tensor of future features
-    Xf = scaler.transform(forecast_window_df[features].values)
-    Xf_t = torch.tensor(Xf, dtype=torch.float32).unsqueeze(0)
+    # fine-tune on first 5 available points
+    if fine_tune and len(avail) >= 5:
+        raw_feats = avail[features].values[:5]
+        raw_tgts  = avail[target].values[:5]
+        scaled_5  = scaler.transform(raw_feats)
 
-    # 6) seed capacity
-    seed_val = available_df[target].iloc[-1]
-    seed_t   = torch.tensor([[seed_val]], dtype=torch.float32)
+        Xm, ym = make_sequences(scaled_5, raw_tgts, 5)
+        Xs, ys = make_sequences(scaled_5, raw_tgts, 1)
+        Xm_t, ym_t = torch.tensor(Xm, dtype=torch.float32), torch.tensor(ym, dtype=torch.float32)
+        Xs_t, ys_t = torch.tensor(Xs, dtype=torch.float32), torch.tensor(ys, dtype=torch.float32)
 
-    # 7) run all three models
+        opts = [
+            optim.Adam(m1.parameters(), lr=1e-3),
+            optim.Adam(b1_.parameters(), lr=1e-3),
+            optim.Adam(m2.parameters(), lr=1e-3),
+            optim.Adam(b2_.parameters(), lr=1e-3),
+            optim.Adam(m3.parameters(), lr=1e-3),
+            optim.Adam(b3_.parameters(), lr=1e-3),
+        ]
+        loss_fn = nn.MSELoss()
+
+        m1.train(); b1_.train()
+        m2.train(); b2_.train()
+        m3.train(); b3_.train()
+        for _ in range(fine_tune_epochs):
+            # S1: 5-step
+            opts[0].zero_grad()
+            p1 = m1(Xm_t, ym_t[:, :1], forecast_steps=5)
+            l1 = loss_fn(p1, ym_t)
+            l1.backward(); opts[0].step()
+
+            opts[1].zero_grad()
+            bp1 = b1_(Xm_t, ym_t[:, :1], forecast_steps=5)
+            lb1 = loss_fn(bp1, ym_t)
+            lb1.backward(); opts[1].step()
+
+            # S2: 1-step
+            opts[2].zero_grad()
+            p2 = m2(Xs_t, ys_t[:, :1], forecast_steps=1)
+            l2 = loss_fn(p2, ys_t)
+            l2.backward(); opts[2].step()
+
+            opts[3].zero_grad()
+            bp2 = b2_(Xs_t, ys_t[:, :1], forecast_steps=1)
+            lb2 = loss_fn(bp2, ys_t)
+            lb2.backward(); opts[3].step()
+
+            # S3: 5-step
+            opts[4].zero_grad()
+            p3 = m3(Xm_t, ym_t[:, :1], forecast_steps=5)
+            l3 = loss_fn(p3, ym_t)
+            l3.backward(); opts[4].step()
+
+            opts[5].zero_grad()
+            bp3 = b3_(Xm_t, ym_t[:, :1], forecast_steps=5)
+            lb3 = loss_fn(bp3, ym_t)
+            lb3.backward(); opts[5].step()
+
+        m1.eval(); b1_.eval()
+        m2.eval(); b2_.eval()
+        m3.eval(); b3_.eval()
+
+    # prepare future window
+    Xf_t = torch.tensor(scaler.transform(fw[features].fillna(0)),
+                       dtype=torch.float32).unsqueeze(0)
+    seed_t = torch.tensor([[avail[target].iloc[-1]]],
+                          dtype=torch.float32)
+
     with torch.no_grad():
-        pi1_p = pi1 (Xf_t, seed_t, forecast_steps=n_steps).squeeze(0).cpu().numpy()
-        b1_p  = b1  (Xf_t, seed_t, forecast_steps=n_steps).squeeze(0).cpu().numpy()
-        pi2_p = recursive_forecast(pi2, Xf_t, seed_t, steps=n_steps).squeeze(0).cpu().numpy()
-        b2_p  = recursive_forecast(b2,  Xf_t, seed_t, steps=n_steps).squeeze(0).cpu().numpy()
-        pi3_p = pi3 (Xf_t, seed_t, forecast_steps=n_steps).squeeze(0).cpu().numpy()
-        b3_p  = b3  (Xf_t, seed_t, forecast_steps=n_steps).squeeze(0).cpu().numpy()
+        pi1_p = m1(Xf_t, seed_t, forecast_steps=n).squeeze(0).cpu().numpy()
+        b1_p  = b1_(Xf_t, seed_t, forecast_steps=n).squeeze(0).cpu().numpy()
+        pi2_p = m2(Xf_t, seed_t, forecast_steps=n).squeeze(0).cpu().numpy()
+        b2_p  = b2_(Xf_t, seed_t, forecast_steps=n).squeeze(0).cpu().numpy()
+        pi3_p = m3(Xf_t, seed_t, forecast_steps=n).squeeze(0).cpu().numpy()
+        b3_p  = b3_(Xf_t, seed_t, forecast_steps=n).squeeze(0).cpu().numpy()
 
-    # 8) plot
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4), dpi=100, sharey=True, constrained_layout=True)
+    if return_predictions:
+        return {
+            'available_idx': avail.index.values,
+            'forecast_idx':  fw.index.values,
+            'true_values':   fw[target].values,
+            'S1': {'pi': pi1_p, 'baseline': b1_p},
+            'S2': {'pi': pi2_p, 'baseline': b2_p},
+            'S3': {'pi': pi3_p, 'baseline': b3_p},
+        }
+
+    # ————————————————— Plotting (unchanged) —————————————————
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4), dpi=100, sharey=True)
     scenario_info = [
-        ("S1: Fixed-Horizon Forecasting",   pi1_p, b1_p, 'd', 's', 'crimson', 'crimson'),
-        ("S2: Recursive Forecasting",       pi2_p, b2_p, 'd', 's', 'crimson', 'crimson'),
-        ("S3: Maximum-Horizon Forecasting", pi3_p, b3_p, 'd', 's', 'crimson', 'crimson'),
+        ("S1: Fixed-Horizon Forecasting",   pi1_p, b1_p, 'd', 's'),
+        ("S2: Recursive Forecasting",       pi2_p, b2_p, 'd', 's'),
+        ("S3: Maximum-Horizon Forecasting", pi3_p, b3_p, 'd', 's')
     ]
 
-    last_idx      = available_df.index[-1]
-    last_val      = available_df[target].iloc[-1]
-    first_idx     = forecast_window_df.index[0]
-    first_val     = forecast_window_df[target].iloc[0]
+    last_idx, last_val = avail.index[-1], avail[target].iloc[-1]
+    first_idx, first_val = fw.index[0], fw[target].iloc[0]
 
-    for ax, (title, pi_pred, base_pred, pi_m, base_m, pi_c, base_c) \
-            in zip(axes, scenario_info):
-        # vertical forecast line
+    for ax, (title, pi_pred, base_pred, pi_m, base_m) in zip(axes, scenario_info):
         ax.axvline(x=forecast_rpt-1, color='black', linestyle='--', linewidth=1)
-
-        # available data
-        ax.plot(
-            available_df.index, available_df[target],
-            marker='o', color='black', markersize=9,
-            linestyle='-', linewidth=1.5, label='Data Available'
-        )
-        # connector
-        ax.plot(
-            [last_idx, first_idx], [last_val, first_val],
-            color='black', linestyle='-', linewidth=1.5
-        )
-        # true future
-        ax.plot(
-            future_df.index, future_df[target],
-            marker='o', color='black', markersize=9,
-            linestyle='-', linewidth=1.5,
-            label='True Capacity', markerfacecolor='white'
-        )
-        # PI-RNN
-        ax.plot(
-            forecast_window_df.index, pi_pred,
-            marker=pi_m, color=pi_c,
-            markersize=6, linestyle='-', linewidth=0.5,
-            label='PI-RNN'
-        )
-        # Baseline RNN
-        ax.plot(
-            forecast_window_df.index, base_pred,
-            marker=base_m, color=base_c,
-            markersize=6, linestyle='--', linewidth=0.5,
-            label='Baseline RNN'
-        )
-
+        ax.plot(avail.index, avail[target], 'ko-', markersize=9, linewidth=1.5, label='Data Available')
+        ax.plot([last_idx, first_idx], [last_val, first_val], 'k-', linewidth=1.5)
+        ax.plot(fut.index, fut[target], 'ko-', markersize=9, linewidth=1.5,
+                markerfacecolor='white', label='True Capacity')
+        ax.plot(fw.index, pi_pred, marker=pi_m, color='crimson',
+                markersize=6, linestyle='-', linewidth=0.5, label='PI-RNN')
+        ax.plot(fw.index, base_pred, marker=base_m, color='crimson',
+                markersize=6, linestyle='--', linewidth=0.5, label='Baseline RNN')
         ax.set_xlabel('RPT Number (-)', fontsize=18)
         ax.set_xticks(np.arange(0, 35, 5))
         ax.set_title(title, fontsize=16)
@@ -298,17 +299,21 @@ def visualize_all_scenarios(
     axes[0].set_xlim(-2, 35)
     axes[0].set_ylim(0.4, 1.4)
 
-    # plt.tight_layout()
+    plt.tight_layout()
     plt.show()
 
-# run the visualization
-if __name__=='__main__':
+# —————————————————————————————
+# If run as a script, launch viz
+# —————————————————————————————
+if __name__ == '__main__':
     visualize_all_scenarios(
-        forecast_rpt=10,
-        forecast_steps=7,
-        scaler=scaler,
-        features=features,
-        target=target,
-        Group='G3',
-        Cell='C1'
+        forecast_rpt      = 10,
+        forecast_steps    = 7,
+        scaler            = scaler,
+        features          = features,
+        target            = target,
+        Group             = 'G15',
+        Cell              = 'C1',
+        return_predictions= True,
+        fine_tune         = False
     )

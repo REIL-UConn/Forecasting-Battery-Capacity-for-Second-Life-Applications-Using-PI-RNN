@@ -1,34 +1,28 @@
+# train_evaluate.py
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.preprocessing import MinMaxScaler
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import random
-from sklearn.metrics import mean_squared_error, mean_absolute_error
-from data_utils import (
-    prepare_pbm_surrogate,
-    prepare_battery_sequences,
-    create_sequences
-)
-from models import MultiStepPIRNN, BaselineMultiStepRNN, GPRBaseline,  PBMSurrogate
 from collections import defaultdict
-import warnings
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 
-warnings.filterwarnings('ignore')
+from data_utils import (
+    load_pbm_surrogate,
+    load_battery_data,
+    make_sequences,
+    PBM_FEATURES
+)
+from models import PBMSurrogate, MultiStepPIRNN, BaselineMultiStepRNN, GPRBaseline
 
 # —————————————————————————————
 # 0. Styling & reproducibility
 # —————————————————————————————
 plt.rcParams['font.family'] = 'Times New Roman'
-plt.rcParams['font.size'] = 14
-plt.rcParams['axes.labelsize'] = 14
-plt.rcParams['axes.titlesize'] = 16
-plt.rcParams['xtick.labelsize'] = 12
-plt.rcParams['ytick.labelsize'] = 12
-marker_size = 40
-tick_range = np.arange(0.6, 1.3, 0.1)
+plt.rcParams['font.size']   = 14
 
 seed = 40
 np.random.seed(seed)
@@ -37,308 +31,216 @@ random.seed(seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark     = False
 
-# —————————————————————————————
-# 1. Train PBM surrogate
-# —————————————————————————————
-file_paths = [
-    'Simulated_PBM_data/G18_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G16_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G4_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G3_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G2_PBM_Simulated.pkl'
-]
-
-sim_features_full = [
-    'Ampere-Hour Throughput (Ah)',
-    'Total Time Elapsed (h)',
-    'Total Absolute Time From Start (h)',
-    'Time Below 3A (h)',
-    'Time Between 3A and 4A (h)',
-    'Time Above 4A (h)',
-    'RPT Number',
-    'Capacity'
-]
-sim_target = "Capacity_Drop_Ah"
-
-rf_model, scaler_sim = prepare_pbm_surrogate(
-    file_paths,
-    sim_features_full,
-    sim_target,
-    seed=seed
-)
+# for our scatter plots
+marker_size = 100
+tick_range = np.arange(0.6, 1.3, 0.1)
 
 # —————————————————————————————
-# 2. Prepare Battery Data & Create Sequences
+# 1. Train PBM surrogate (and get sim_df)
 # —————————————————————————————
+rf_model, scaler_sim, sim_df = load_pbm_surrogate(seed=seed)
 
-batch1_path  = 'Processed_data/Processed_data_Cycling&RPT_Batch1_Capacity_Forecasting_merged_update_Jan2025.pkl'
-batch2_path  = 'Processed_data/Processed_data_Cycling&RPT_Batch2_Capacity_Forecasting_merged_update_Jan2025.pkl'
-
-features = [
-    'Ampere-Hour Throughput (Ah)',
-    'Total Absolute Time From Start (h)',
-    'Total Time Elapsed (h)',
-    'Time Below 3A (h)',
-    'Time Between 3A and 4A (h)',
-    'Time Above 4A (h)',
-    'RPT Number'
-]
-target = 'Capacity'
-
-X_train_s, y_train, X_val_s, y_val, X_test_s, y_test, scaler, test_df = prepare_battery_sequences(
-    batch1_path,
-    batch2_path,
-    features,
-    target,
-    val_cell_count=3,
-    seed=seed
-)
-
-forecast_steps = 10
-X_train_seq, y_train_seq = create_sequences(X_train_s, y_train,   forecast_steps)
-X_val_seq,   y_val_seq   = create_sequences(X_val_s,   y_val,     forecast_steps)
-X_test_seq,  y_test_seq  = create_sequences(X_test_s,  y_test,    forecast_steps)
-
-# Convert to tensors
-X_train_tensor = torch.tensor(X_train_seq, dtype=torch.float32)
-y_train_tensor = torch.tensor(y_train_seq, dtype=torch.float32)
-X_val_tensor   = torch.tensor(X_val_seq,   dtype=torch.float32)
-y_val_tensor   = torch.tensor(y_val_seq,   dtype=torch.float32)
-X_test_tensor  = torch.tensor(X_test_seq,  dtype=torch.float32)
-y_test_tensor  = torch.tensor(y_test_seq,  dtype=torch.float32)
-
-# —————————————————————————————
-# 3. Train PI‑RNN & Baseline RNN
-# —————————————————————————————
-# Both models use input_size = len(features) + 1 = 7 + 1 = 8.
-input_size = len(features) + 1
-hidden_size = 50
-num_epochs = 2500
-patience = 50
-
-# PI‑RNN
-# Initialize the PI-RNN model (max-horizon training).
-model_PI_RNN = MultiStepPIRNN(input_size, hidden_size, rf_model)
-optimizer_PI = optim.Adam(model_PI_RNN.parameters(), lr=0.001)
-criterion = nn.MSELoss()
-
-best_val_PI = float('inf')
-no_imp_PI   = 0
-for epoch in range(1, num_epochs+1):
-    model_PI_RNN.train(); optimizer_PI.zero_grad()
-    seed = y_train_tensor[:, [0]]
-    preds = model_PI_RNN(X_train_tensor, seed, forecast_steps)
-    loss  = criterion(preds, y_train_tensor[:, :forecast_steps])
-    loss.backward(); optimizer_PI.step()
-
-    model_PI_RNN.eval()
-    with torch.no_grad():
-        val_seed = y_val_tensor[:, [0]]
-        val_preds = model_PI_RNN(X_val_tensor, val_seed, forecast_steps)
-        val_loss  = criterion(val_preds, y_val_tensor[:, :forecast_steps])
-
-    if val_loss < best_val_PI:
-        best_val_PI, no_imp_PI = val_loss, 0
-    else:
-        no_imp_PI += 1
-        if no_imp_PI >= patience:
-            print(f"Early stop PI-RNN at epoch {epoch}")
-            break
-
-    if epoch % 10 == 0:
-        print(f"[PI-RNN] {epoch}/{num_epochs} - train {loss:.4f}, val {val_loss:.4f}")
-
-# Baseline RNN
-# Initialize the Baseline RNN model (max-horizon training).
-baseline_model = BaselineMultiStepRNN(input_size, hidden_size)
-optimizer_base = optim.Adam(baseline_model.parameters(), lr=0.001)
-criterion = nn.MSELoss()
-
-best_val_base = float('inf')
-no_imp_base  = 0
-for epoch in range(1, num_epochs+1):
-    baseline_model.train(); optimizer_base.zero_grad()
-    seed = y_train_tensor[:, [0]]
-    preds = baseline_model(X_train_tensor, seed, forecast_steps)
-    loss  = criterion(preds, y_train_tensor[:, :forecast_steps])
-    loss.backward(); optimizer_base.step()
-
-    baseline_model.eval()
-    with torch.no_grad():
-        val_seed  = y_val_tensor[:, [0]]
-        val_preds = baseline_model(X_val_tensor, val_seed, forecast_steps)
-        val_loss  = criterion(val_preds, y_val_tensor[:, :forecast_steps])
-
-    if val_loss < best_val_base:
-        best_val_base, no_imp_base = val_loss, 0
-    else:
-        no_imp_base += 1
-        if no_imp_base >= patience:
-            print(f"Early stop Baseline RNN at epoch {epoch}")
-            break
-
-    if epoch % 10 == 0:
-        print(f"[Baseline] {epoch}/{num_epochs} - train {loss:.4f}, val {val_loss:.4f}")
-
-
-# —————————————————————————————
-# 4. Evaluate Single-Step Forecasts 
-# —————————————————————————————
-def evaluate_single_step(model, X_seq, y_seq):
-    model.eval()
-    with torch.no_grad():
-        seed = y_seq[:, [0]]
-        preds_all = model(X_seq, seed, forecast_steps)
-    return preds_all[:, 0].cpu().numpy()
-
-X_test_seq, y_test_seq = create_sequences(X_test_s, y_test, forecast_steps)
-X_test_tensor = torch.tensor(X_test_seq, dtype=torch.float32)
-y_test_tensor = torch.tensor(y_test_seq, dtype=torch.float32)
-y_test_single = y_test_tensor[:, 0].cpu().numpy()
-
-# Predictions for RNN models
-base_preds_single = evaluate_single_step(baseline_model, X_test_tensor, y_test_tensor)
-pi_preds_single = evaluate_single_step(model_PI_RNN, X_test_tensor, y_test_tensor)
-
-# Predictions for GPR Baseline
-model_gpr = GPRBaseline()
-y_true_GPR, y_pred_GPR = [], []
-for (group, cell), data in test_df.groupby(['Group', 'Cell']):
-    model_gpr.fit(data, (group, cell), initial_points=6)
-    yt, yp = model_gpr.predict(data, (group, cell), initial_points=6)
-    y_true_GPR.extend(yt)
-    y_pred_GPR.extend(yp)
-
-# PBM surrogate predictions
-
-# for single-step capacity forecasting, we *exclude* 'Capacity' itself
-sim_features = [f for f in sim_features_full if f != 'Capacity']
-# sim_target would be 'Capacity' here
-sim_target = 'Capacity'
-
-# 1) Instantiate & train PBM surrogate
+# wrap into the full PBMSurrogate class (for single‐ and multi‐step)
+# exclude "Capacity" from features during single‐step
+drop_features = [f for f in PBM_FEATURES if f != 'Capacity']
 pbm = PBMSurrogate(
-    features=sim_features,
-    capacity_target="Capacity",
-    drop_target="Capacity_Drop_Ah",
+    features=drop_features,
+    capacity_target='Capacity',
+    drop_target='Capacity_Drop_Ah',
     n_estimators=50,
-    random_state=40
+    random_state=seed
 )
-sim_df = pbm.load_simulation_data(file_paths)
-
-# 1a) Single-step capacity model
+# fit capacity‐drop model
 pbm.fit_capacity(sim_df)
-
-# 1b) Drop model + multi-step surrogates
+# fit drop model + multi‐horizon surrogates
 pbm.fit_drop(sim_df)
 for h in range(2, 11):
     pbm.fit_horizon(sim_df, h)
 
-# ------------------------
-# Single-Step Evaluation
-# ------------------------
-y_test_pbm = test_df["Capacity"].values
+# —————————————————————————————
+# 2. Load & preprocess battery data
+# —————————————————————————————
+X_train_s, y_train, X_val_s, y_val, X_test_s, y_test, scaler, test_df = \
+    load_battery_data(seed=seed)
+
+# build sequences of length 10 ▶ scenario 3 training
+horizon = 10
+X_tr_seq, y_tr_seq = make_sequences(X_train_s, y_train, horizon)
+X_va_seq, y_va_seq = make_sequences(X_val_s,   y_val,   horizon)
+X_te_seq, y_te_seq = make_sequences(X_test_s,  y_test,  horizon)
+
+# to tensors
+X_tr = torch.tensor(X_tr_seq, dtype=torch.float32)
+y_tr = torch.tensor(y_tr_seq, dtype=torch.float32)
+X_va = torch.tensor(X_va_seq, dtype=torch.float32)
+y_va = torch.tensor(y_va_seq, dtype=torch.float32)
+X_te = torch.tensor(X_te_seq, dtype=torch.float32)
+y_te = torch.tensor(y_te_seq, dtype=torch.float32)
+
+# —————————————————————————————
+# 3. Scenario 3: Train max‐horizon PI-RNN & Baseline RNN
+# —————————————————————————————
+input_size  = X_tr.shape[-1] + 1   # features + current capacity
+hidden_size = 50
+num_epochs  = 2500
+patience    = 50
+criterion   = nn.MSELoss()
+
+# PI-RNN
+pi_rnn = MultiStepPIRNN(input_size, hidden_size, rf_model)
+opt_pi = optim.Adam(pi_rnn.parameters(), lr=1e-3)
+
+best_val, no_imp = float('inf'), 0
+for ep in range(1, num_epochs+1):
+    pi_rnn.train(); opt_pi.zero_grad()
+    seed_cap = y_tr[:, [0]]
+    preds = pi_rnn(X_tr, seed_cap, forecast_steps=horizon)
+    loss  = criterion(preds, y_tr)
+    loss.backward(); opt_pi.step()
+
+    pi_rnn.eval()
+    with torch.no_grad():
+        vseed = y_va[:, [0]]
+        vpred = pi_rnn(X_va, vseed, forecast_steps=horizon)
+        vloss = criterion(vpred, y_va)
+
+    if vloss < best_val:
+        best_val, no_imp = vloss, 0
+    else:
+        no_imp += 1
+        if no_imp >= patience:
+            print(f"[PI-RNN] early stop @ epoch {ep}")
+            break
+
+# Baseline RNN
+base_rnn = BaselineMultiStepRNN(input_size, hidden_size)
+opt_b   = optim.Adam(base_rnn.parameters(), lr=1e-3)
+
+best_vb, no_impb = float('inf'), 0
+for ep in range(1, num_epochs+1):
+    base_rnn.train(); opt_b.zero_grad()
+    bpreds = base_rnn(X_tr, seed_cap, forecast_steps=horizon)
+    bloss  = criterion(bpreds, y_tr)
+    bloss.backward(); opt_b.step()
+
+    base_rnn.eval()
+    with torch.no_grad():
+        vbpred = base_rnn(X_va, vseed, forecast_steps=horizon)
+        vbloss = criterion(vbpred, y_va)
+
+    if vbloss < best_vb:
+        best_vb, no_impb = vbloss, 0
+    else:
+        no_impb += 1
+        if no_impb >= patience:
+            print(f"[Baseline RNN] early stop @ epoch {ep}")
+            break
+
+# —————————————————————————————
+# 4. Single-step evaluation
+# —————————————————————————————
+def eval_single(model, X, y):
+    model.eval()
+    with torch.no_grad():
+        seed_c = y[:, [0]]
+        out    = model(X, seed_c, forecast_steps=horizon)
+    return out[:,0].cpu().numpy()
+
+# RNNs
+rnn_pred   = eval_single(base_rnn, X_te, y_te)
+pirnn_pred = eval_single(pi_rnn,   X_te, y_te)
+
+# GPR baseline
+model_gpr = GPRBaseline()
+y_true_gpr, y_pred_gpr = [], []
+for (g, c), grp in test_df.groupby(['Group','Cell']):
+    model_gpr.fit(grp, (g,c), initial_points=6)
+    yt, yp = model_gpr.predict(grp, (g,c), initial_points=6)
+    y_true_gpr.extend(yt); y_pred_gpr.extend(yp)
+
+# PBM surrogate single-step
+y_true_pbm = test_df['Capacity'].values
 y_pred_pbm = pbm.predict_capacity(test_df)
 
+# compute MAE/RMSE
+rmse_pbm, mae_pbm   = np.sqrt(mean_squared_error(y_true_pbm, y_pred_pbm)), mean_absolute_error(y_true_pbm, y_pred_pbm)
+rmse_gpr, mae_gpr   = np.sqrt(mean_squared_error(y_true_gpr, y_pred_gpr)), mean_absolute_error(y_true_gpr, y_pred_gpr)
+rmse_rnn, mae_rnn   = np.sqrt(mean_squared_error(y_te[:,0].numpy(), rnn_pred)), mean_absolute_error(y_te[:,0].numpy(), rnn_pred)
+rmse_pirnn, mae_pirnn = np.sqrt(mean_squared_error(y_te[:,0].numpy(), pirnn_pred)), mean_absolute_error(y_te[:,0].numpy(), pirnn_pred)
 
-# RMSE & MAE calculation function
-def calculate_rmse_mae(true, pred):
-    return np.sqrt(mean_squared_error(true, pred)), mean_absolute_error(true, pred)
-
-# Calculate metrics
-rmse_PBM, mae_PBM = calculate_rmse_mae(y_test_pbm, y_pred_pbm)
-rmse_GPR, mae_GPR = calculate_rmse_mae(y_true_GPR, y_pred_GPR)
-rmse_RNN, mae_RNN = calculate_rmse_mae(y_test_single, base_preds_single)
-rmse_PI_RNN, mae_PI_RNN = calculate_rmse_mae(y_test_single, pi_preds_single)
-
-# Plotting
-fig, axs = plt.subplots(2, 2, figsize=(15, 9), dpi=300, constrained_layout=True)
-models = [(y_test_pbm, y_pred_pbm, 'PBM', 'lightgreen', 'o', rmse_PBM, mae_PBM),
-          (y_true_GPR, y_pred_GPR, 'GPR', 'crimson', '^', rmse_GPR, mae_GPR),
-          (y_test_single, base_preds_single, 'Baseline RNN', 'orange', 's', rmse_RNN, mae_RNN),
-          (y_test_single, pi_preds_single, 'PI-RNN', 'green', 'D', rmse_PI_RNN, mae_PI_RNN)]
-
-for ax, (true, pred, title, color, marker, rmse, mae) in zip(axs.flat, models):
-    ax.scatter(true, pred, color=color, marker=marker, s=marker_size, alpha=0.7)
-    ax.plot([0.5, 1.3], [0.5, 1.3], 'k--', lw=1.5)
+# —————————————————————————————
+# 5. Single-step plotting (2×2)
+# —————————————————————————————
+fig, axs = plt.subplots(2, 2, figsize=(15,9), dpi=300, constrained_layout=True)
+models = [
+    (y_true_pbm,   y_pred_pbm,   'PBM',           'lightgreen', 'o', rmse_pbm,   mae_pbm),
+    (y_true_gpr,   y_pred_gpr,   'GPR',           'crimson',    '^', rmse_gpr,   mae_gpr),
+    (y_te[:,0].numpy(), rnn_pred, 'Baseline RNN',  'orange',     's', rmse_rnn,   mae_rnn),
+    (y_te[:,0].numpy(), pirnn_pred,'PI-RNN',        'green',      'D', rmse_pirnn, mae_pirnn)
+]
+for ax, (t, p, title, color, m, rmse, mae) in zip(axs.flat, models):
+    ax.scatter(t, p, color=color, marker=m, s=marker_size, alpha=0.7)
+    ax.plot([0.5,1.3],[0.5,1.3],'k--',lw=1.5)
     ax.set_title(title)
-    ax.set_xlabel("True Capacity (Ah)")
-    ax.set_ylabel("Predicted Capacity (Ah)")
-    ax.set_xticks(tick_range)
-    ax.set_yticks(tick_range)
-    ax.set_xlim([0.55, 1.25])
-    ax.set_ylim([0.55, 1.25])
+    ax.set_xlabel('True Capacity (Ah)')
+    ax.set_ylabel('Predicted Capacity (Ah)')
+    ax.set_xticks(tick_range); ax.set_yticks(tick_range)
+    ax.set_xlim([0.55,1.25]);  ax.set_ylim([0.55,1.25])
     ax.text(1.05, 0.6, f'MAE: {mae:.3f}\nRMSE: {rmse:.3f}',
-            bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'), fontsize=12)
+            bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'),
+            fontsize=12)
     ax.grid(True, linestyle='--', alpha=0.5)
 
-# plt.savefig('Exported Figures/LFP_single_step_forecast_accuracy_revised_max_horizon.svg', dpi=300, format='svg')
 plt.show()
 
+# —————————————————————————————
+# 6. Multi-step RMSE
+# —————————————————————————————
+horizons = list(range(2,11))
+rmse_multi = defaultdict(list)
 
-
-
-# 1) Define horizons and container
-horizons   = list(range(2, 11))    # forecast steps 2…10
-rmse_multi = defaultdict(list)     # keys: 'PBM','GPR','RNN','PI-RNN'
-
-# PBM multi-step:
+# PBM
 for h in horizons:
-    y_true_h = test_df["Capacity"].values[h:]
-    y_pred_h = pbm.predict_capacity_multi(test_df, steps=h)
-    rmse_multi["PBM"].append(np.sqrt(mean_squared_error(y_true_h, y_pred_h)))
+    yt = y_true_pbm[h:]
+    yp = pbm.predict_capacity_multi(test_df, steps=h)
+    rmse_multi['PBM'].append(np.sqrt(mean_squared_error(yt, yp)))
 
-# 3) GPR baseline multi-step
-gpr = GPRBaseline(initial_points=9)
-
-# fit once per cell
-for (grp, cell), df_cell in test_df.groupby(['Group','Cell']):
-    gpr.fit(df_cell, (grp, cell))
-
-# then collect per-horizon RMSE
+# GPR
+gpr2 = GPRBaseline(initial_points=9)
+for (g,c), grp in test_df.groupby(['Group','Cell']):
+    gpr2.fit(grp, (g,c), initial_points=9)
 for h in horizons:
-    y_true_all, y_pred_all = [], []
-    for (grp, cell), df_cell in test_df.groupby(['Group','Cell']):
-        yt, yp = gpr.predict_horizon(df_cell, (grp, cell), steps=h)
-        y_true_all.extend(yt)
-        y_pred_all.extend(yp)
-    rmse_multi['GPR'].append(np.sqrt(mean_squared_error(y_true_all, y_pred_all)))
+    yt_all, yp_all = [], []
+    for (g,c), grp in test_df.groupby(['Group','Cell']):
+        yt, yp = gpr2.predict_horizon(grp, (g,c), steps=h)
+        yt_all.extend(yt); yp_all.extend(yp)
+    rmse_multi['GPR'].append(np.sqrt(mean_squared_error(yt_all, yp_all)))
 
-# 4) RNN & PI-RNN multi-step
-baseline_model.eval()
-model_PI_RNN.eval()
+# RNN & PI-RNN
+base_rnn.eval(); pi_rnn.eval()
 with torch.no_grad():
     for h in horizons:
-        out_base = baseline_model(
-            X_test_tensor,
-            y_test_tensor[:, :1],
-            forecast_steps=h
-        ).cpu().numpy().flatten()
-        out_pi   = model_PI_RNN(
-            X_test_tensor,
-            y_test_tensor[:, :1],
-            forecast_steps=h
-        ).cpu().numpy().flatten()
-        t_true = y_test_tensor[:, :h].cpu().numpy().flatten()
+        b_out = base_rnn(X_te, y_te[:,:1], forecast_steps=h).cpu().numpy().flatten()
+        p_out = pi_rnn(X_te,   y_te[:,:1], forecast_steps=h).cpu().numpy().flatten()
+        t_true = y_te[:,:h].cpu().numpy().flatten()
 
-        rmse_multi['RNN'].append(np.sqrt(mean_squared_error(t_true, out_base)))
-        rmse_multi['PI-RNN'].append(np.sqrt(mean_squared_error(t_true, out_pi)))
+        rmse_multi['RNN'].append(np.sqrt(mean_squared_error(t_true, b_out)))
+        rmse_multi['PI-RNN'].append(np.sqrt(mean_squared_error(t_true, p_out)))
 
-# 5) Plotting
-x     = np.arange(len(horizons))
-width = 0.2
+# bar plot
+x = np.arange(len(horizons))
+w = 0.2
 
 plt.figure(figsize=(10,5), dpi=300)
-plt.bar(x - 1.5*width, rmse_multi['PBM'],   width, label='PBM',   color='lightgreen')
-plt.bar(x - 0.5*width, rmse_multi['GPR'],   width, label='GPR',   color='crimson')
-plt.bar(x + 0.5*width, rmse_multi['RNN'],   width, label='RNN',   color='orange')
-plt.bar(x + 1.5*width, rmse_multi['PI-RNN'],width, label='PI-RNN',color='green')
+plt.bar(x-1.5*w, rmse_multi['PBM'],    w, label='PBM',    color='lightgreen')
+plt.bar(x-0.5*w, rmse_multi['GPR'],    w, label='GPR',    color='crimson')
+plt.bar(x+0.5*w, rmse_multi['RNN'],    w, label='RNN',    color='orange')
+plt.bar(x+1.5*w, rmse_multi['PI-RNN'], w, label='PI-RNN', color='green')
 
 plt.xlabel('Forecasting Steps', fontsize=14)
-plt.ylabel('RMSE (Ah)',           fontsize=14)
+plt.ylabel('RMSE (Ah)',            fontsize=14)
 plt.xticks(x, horizons)
 plt.legend()
 plt.grid(axis='y', linestyle='--', alpha=0.5)
 plt.tight_layout()
-# plt.savefig('Exported Figures/LFP_multi_step_forecast.svg', dpi=300, format='svg')
 plt.show()
