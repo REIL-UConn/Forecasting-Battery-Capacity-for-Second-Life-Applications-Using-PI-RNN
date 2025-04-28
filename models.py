@@ -48,47 +48,66 @@ def train_pbm_surrogate_for_PI_RNN(file_paths, sim_features, sim_target, seed=40
 # --------------------------
 ### PI-RNN  
 # --------------------------
+# models.py
+
+import torch
+import torch.nn as nn
+
 class CustomRNNCellWithSurrogate(nn.Module):
-    def __init__(self, input_size, hidden_size, surrogate_model):
-        super(CustomRNNCellWithSurrogate, self).__init__()
-        self.input_size = input_size  
-        self.hidden_size = hidden_size
-        self.surrogate_model = surrogate_model
-        self.W_ih = nn.Linear(input_size, hidden_size)
-        self.W_hh = nn.Linear(hidden_size, hidden_size)
+    def __init__(self, input_size, hidden_size, surrogate_model, dropout_rate: float = 0.0):
+        super().__init__()
+        self.input_size     = input_size
+        self.hidden_size    = hidden_size
+        self.surrogate_model= surrogate_model
+
+        self.W_ih     = nn.Linear(input_size, hidden_size)
+        self.W_hh     = nn.Linear(hidden_size, hidden_size)
         self.activation = nn.Tanh()
+
+        # dropout layer: identity if rate=0 -> only activate for UQ
+        self.dropout  = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
+
         self.pbm_weight = nn.Parameter(torch.randn(1, hidden_size))
-        self.fc = nn.Linear(hidden_size, 1)  # Predict capacity drop
+        self.fc         = nn.Linear(hidden_size, 1)
 
     def forward(self, x, hidden):
-        raw_feat_count = self.input_size
-        pbm_features = x[:, :raw_feat_count].detach().cpu().numpy()
-        pbm_output = self.surrogate_model.predict(pbm_features)
-        pbm_output = torch.tensor(pbm_output, dtype=torch.float32, device=x.device)
-        pbm_output = pbm_output.unsqueeze(1).expand(-1, self.hidden_size)
-        h_pbm = self.pbm_weight * pbm_output
+        # PBM surrogate injection (unchanged)
+        raw_feats = x[:, : self.input_size].detach().cpu().numpy()
+        pbm_out   = self.surrogate_model.predict(raw_feats)
+        pbm_out   = torch.tensor(pbm_out, dtype=torch.float32, device=x.device)
+        pbm_out   = pbm_out.unsqueeze(1).expand(-1, self.hidden_size)
+        h_pbm     = self.pbm_weight * pbm_out
+
+        # standard RNN update
         h_next = self.activation(self.W_ih(x) + self.W_hh(hidden) + h_pbm)
+
+        # **dropout** (no-op if dropout_rate=0)
+        h_next = self.dropout(h_next)
+
         capacity_drop = self.fc(h_next)
         return h_next, capacity_drop
 
+
 class MultiStepPIRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, surrogate_model):
-        super(MultiStepPIRNN, self).__init__()
+    def __init__(self, input_size, hidden_size, surrogate_model, dropout_rate: float = 0.0):
+        super().__init__()
         self.hidden_size = hidden_size
-        self.rnn_cell = CustomRNNCellWithSurrogate(input_size, hidden_size, surrogate_model)
-        self.input_size = input_size
+        # pass dropout_rate down into the cell
+        self.rnn_cell    = CustomRNNCellWithSurrogate(input_size, hidden_size, surrogate_model, dropout_rate)
+        self.input_size  = input_size
 
     def forward(self, x, current_capacity, forecast_steps):
-        batch_size, seq_len, _ = x.size()
+        batch_size = x.size(0)
         h = torch.zeros(batch_size, self.hidden_size, device=x.device)
         next_capacity = current_capacity.clone().to(x.device)
-        all_predictions = []
+        preds = []
         for t in range(forecast_steps):
-            current_input = torch.cat((x[:, t, :], next_capacity), dim=1)
-            h, capacity_drop = self.rnn_cell(current_input, h)
-            next_capacity = next_capacity - capacity_drop
-            all_predictions.append(next_capacity.squeeze(-1))
-        return torch.stack(all_predictions, dim=1)
+            inp = torch.cat((x[:, t, :], next_capacity), dim=1)
+            h, drop = self.rnn_cell(inp, h)
+            next_capacity = next_capacity - drop
+            preds.append(next_capacity.squeeze(-1))
+        return torch.stack(preds, dim=1)
+
 
 
 # --------------------------
