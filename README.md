@@ -16,15 +16,15 @@ It contains code and data for training, evaluating, and visualizing a physics-in
 .
 ├── processed_data/             # Preprocessed Cycling & RPT datasets (.pkl)
 ├── saved_models/               # Trained model weights (.pth, .pt)
-├── simulated_PBM_data/         # Features from physics-based simulations (.pkl)
+├── simulated_PBM_data/         # Physics-based simulations and feature extraction from them (.pkl)
 ├── data_utils.py               # Data loaders & sequence builders
 ├── models.py                   # PI-RNN, baselines, PBM surrogates
 ├── pbm_experiments.py          # PyBaMM simulation & feature extraction
-├── preprocessing.py            # Raw Excel → merged .pkl + capacity-fade plots
+├── preprocessing.py            # Raw Excel → merged .pkl + capacity fade plots
 ├── RMSE_evaluation.py          # Single/multi-step RMSE & MAE evaluation
-├── training_strategies.py      # Scenario-based PI-RNN & baseline training
-├── trajectory_forecast.py      # CLI forecasting + visualization
-├── uncertainty_quantification.py # UQ trajectories & calibration curves
+├── training_strategies.py      # Scenario-based PI-RNN & baseline RNN training
+├── trajectory_forecast.py      # CLI trajectory forecasting visualization
+├── uncertainty_quantification.py # UQ interval trajectories & calibration curves
 ├── README.md                   # This file
 └── requirements.txt            # Python dependencies required to install
 ```
@@ -51,7 +51,7 @@ It contains code and data for training, evaluating, and visualizing a physics-in
 - **preprocessing.py**  
   - Parses “Cycling n” Excel files, computes throughput/time duration features  
   - Reads RPT capacities from master Excel, merges, saves to `processed_data/`  
-  - Plots capacity-fade curves per group
+  - Plots capacity fade curves per group
 
 - **RMSE_evaluation.py**  
   - Trains PI-RNN, Baseline RNN, GPR, PBM surrogate   
@@ -69,8 +69,8 @@ It contains code and data for training, evaluating, and visualizing a physics-in
 
 - **uncertainty_quantification.py**  
   - Loads or trains the S3 PI-RNN model with MC dropout, saves model state  
-  - Generates convex-combined prediction intervals across life phases  
-  - Fits isotonic recalibration on “C2” cells (held out calibration set), plots calibration curves
+  - Generates convex-combined prediction of original and recalibrated intervals across life phases  
+  - Fits isotonic recalibration on “C2” cells (held-out calibration set), plots calibration curves for different number of mc dropout samples
 
 ---
 
