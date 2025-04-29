@@ -1,27 +1,3 @@
-"""
-PBM Experiments with Feature Extraction and Multiple Charging Protocols (Single Group)
----------------------------------------------------------------------------------------
-
-This module runs PyBaMM experiments (CCCV, charge, RPT, and derated cycles) on a DFN model
-for lithium-ion batteries for a single experimental group. For groups G13 and G15 a 
-two-step fast charging protocol is used, whereas other groups use one-step fast charging.
-After simulation, additional performance features are extracted into a Pandas DataFrame
-and saved for analysis.
-
-Dependencies:
-    - pybamm
-    - matplotlib
-    - numpy
-    - pandas
-    - pickle
-    - random
-
-Usage:
-    Run the script as a standalone module:
-        python pbm_experiments_feature_extraction_multiple_protocols.py
-    When prompted, enter the group identifier (e.g., "G1", "G2", "G13", "G15", etc.).
-"""
-
 import pybamm
 import matplotlib.pyplot as plt
 import pickle
@@ -30,10 +6,9 @@ import pandas as pd
 import random
 import os
 
-# =============================================================================
+# —————————————————————————————
 # CONFIGURATION
-# =============================================================================
-
+# —————————————————————————————
 # Model options for DFN and additional physics
 MODEL_OPTIONS = {
     "SEI": "solvent-diffusion limited",
@@ -121,11 +96,10 @@ def get_parameter_values():
     return parameter_values
 
 
-# =============================================================================
+# —————————————————————————————
 # EXPERIMENTAL GROUPS
-# =============================================================================
-
-# The existing groups with one-step fast charging are defined as before.
+# —————————————————————————————
+# One-step fast charging groups:
 GROUPS = {
     "G1": {"charge_current": 6.6468, "discharge_current": 2.7984, "discharge_cutoff": 2.6804, "M1": 4, "M2": 16, "N": 120},    # M and N are chosen based on the transition point observed in experimental data (i.e., the RPT and the region at which battery capacity transition happens)
     "G2": {"charge_current": 6.8844, "discharge_current": 2.9916, "discharge_cutoff": 3.093, "M1": 6, "M2": 14, "N": 120},
@@ -140,11 +114,9 @@ GROUPS = {
     "G15": {"charge_current": 5.7984, "charge_cutoff": 3.5502, "discharge_current": 3.99,   "discharge_cutoff": 3.0537, "M1": 14, "M2": 6, "N": 100},
 }
 
-
-# =============================================================================
+# —————————————————————————————
 # SIMULATION FUNCTIONS
-# =============================================================================
-
+# —————————————————————————————
 def run_experiment(sim_model, experiment, parameter_values, var_pts, starting_solution=None):
     """
     Run a PyBaMM simulation using the provided model, experiment, parameters, and discretization.
@@ -306,10 +278,9 @@ def plot_results(rpt_cycles, rpt_capacities, group_id):
     plt.show()
 
 
-# =============================================================================
+# —————————————————————————————
 # FEATURE EXTRACTION FUNCTIONS
-# =============================================================================
-
+# —————————————————————————————
 def extract_features(group_id, cccv_sols, charge_sols, rpt_sols, rpt_capacities, M1):
     """
     Extract additional performance metrics from the simulation results and
@@ -427,10 +398,9 @@ def extract_features(group_id, cccv_sols, charge_sols, rpt_sols, rpt_capacities,
     return df
 
 
-# =============================================================================
+# —————————————————————————————
 # MAIN EXECUTION
-# =============================================================================
-
+# —————————————————————————————
 def run_group_by_id(group_id):
     """
     Execute the simulation, feature extraction, and plotting for the specified group.

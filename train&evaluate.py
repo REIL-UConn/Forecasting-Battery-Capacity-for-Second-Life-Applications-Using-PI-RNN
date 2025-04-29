@@ -36,7 +36,7 @@ marker_size = 100
 tick_range = np.arange(0.6, 1.3, 0.1)
 
 # —————————————————————————————
-# 1. Train PBM surrogate (and get sim_df)
+# 1. Train PBM surrogate
 # —————————————————————————————
 rf_model, scaler_sim, sim_df = load_pbm_surrogate(seed=seed)
 

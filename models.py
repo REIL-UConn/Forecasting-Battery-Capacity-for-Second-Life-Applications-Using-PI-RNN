@@ -9,12 +9,12 @@ from scipy.optimize import curve_fit
 import GPy
 
 
-# --------------------------
+# —————————————————————————————
 # 1. Train PBM Surrogate (for PI-RNN)
 # Use 'train_pbm_surrogate_for_PI_RNN' to obtain a RandomForest surrogate (rf_model) and its scaler (scaler_sim).
 # This surrogate (rf_model, scaler_sim) is distinct from the PBMSurrogate class below and is used
 # internally to inject physics-based predictions into the PI-RNN model during training.
-
+# —————————————————————————————
 def train_pbm_surrogate_for_PI_RNN(file_paths, sim_features, sim_target, seed=40):
     """
     Load simulation data, fit a RandomForest surrogate.
@@ -45,14 +45,9 @@ def train_pbm_surrogate_for_PI_RNN(file_paths, sim_features, sim_target, seed=40
 
     return rf, scaler
 
-# --------------------------
+# —————————————————————————————
 ### PI-RNN  
-# --------------------------
-# models.py
-
-import torch
-import torch.nn as nn
-
+# —————————————————————————————
 class CustomRNNCellWithSurrogate(nn.Module):
     def __init__(self, input_size, hidden_size, surrogate_model, dropout_rate: float = 0.0):
         super().__init__()
@@ -110,9 +105,9 @@ class MultiStepPIRNN(nn.Module):
 
 
 
-# --------------------------
+# —————————————————————————————
 ### Baseline RNN  
-# --------------------------
+# —————————————————————————————
 class BaselineRNNCell(nn.Module):
     def __init__(self, input_size, hidden_size):
         super(BaselineRNNCell, self).__init__()
@@ -148,9 +143,9 @@ class BaselineMultiStepRNN(nn.Module):
         return torch.stack(predictions, dim=1)
     
 
-# --------------------------
+# —————————————————————————————
 ### Baseline GPR
-# --------------------------
+# —————————————————————————————
 class GPRBaseline:
     def __init__(self, initial_points=9):
         # number of initial points to fit the empirical + GPR
@@ -220,9 +215,9 @@ class GPRBaseline:
         # if fewer than `steps` points exist, it simply returns all of them
         return y_true_full[:steps], y_pred_full[:steps]
 
-# --------------------------
+# —————————————————————————————
 ### PBM Surrogate
-# --------------------------
+# —————————————————————————————
 class PBMSurrogate:
     def __init__(
         self,

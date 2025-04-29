@@ -8,7 +8,7 @@ from models import train_pbm_surrogate_for_PI_RNN
 # —————————————————————————————
 # 0. Dataset Configuration (all in one place)
 # —————————————————————————————
-# physics‐based model pickles
+# PBM pickles
 PBM_SIM_PATHS = [
     'Simulated_PBM_data/G18_PBM_Simulated.pkl',
     'Simulated_PBM_data/G16_PBM_Simulated.pkl',

@@ -1,6 +1,3 @@
-# trajectory_forecast.py
-
-import os
 import argparse
 import torch
 import torch.nn as nn
@@ -25,8 +22,9 @@ from data_utils import (
 from models import train_pbm_surrogate_for_PI_RNN, MultiStepPIRNN, BaselineMultiStepRNN, GPRBaseline
 
 warnings.filterwarnings('ignore')
-
+# —————————————————————————————
 # 0. Styling & reproducibility
+# —————————————————————————————
 plt.rcParams['font.family'] = 'Times New Roman'
 plt.rcParams['font.size']   = 20
 
@@ -37,7 +35,9 @@ random.seed(seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark     = False
 
+# —————————————————————————————
 # 1. Train PBM surrogate
+# —————————————————————————————
 rf_model, scaler_sim = train_pbm_surrogate_for_PI_RNN(
     PBM_SIM_PATHS,
     PBM_FEATURES,
@@ -45,7 +45,9 @@ rf_model, scaler_sim = train_pbm_surrogate_for_PI_RNN(
     seed=seed
 )
 
+# —————————————————————————————
 # 2. Load & preprocess battery data
+# —————————————————————————————
 X_train_s, y_train, X_val_s, y_val, X_test_s, y_test, scaler, test_df = \
     load_battery_data(seed=seed)
 
@@ -54,7 +56,9 @@ h3 = 10
 input_size  = len(BATTERY_FEATURES) + 1
 hidden_size = 50
 
+# —————————————————————————————
 # 3. Load pretrained Scenario‐3 models
+# —————————————————————————————
 pi3 = MultiStepPIRNN(input_size, hidden_size, rf_model)
 pi3.load_state_dict(torch.load('saved_models/pi3_scenario3.pth'))
 pi3.eval()
@@ -139,7 +143,9 @@ def trajectory_forecast(
         model = pi3
         baseline = b3
 
+    # —————————————————————————————
     # 4. Precompute GPR trajectory
+    # —————————————————————————————
     gpr = GPRBaseline(initial_points=10)
     gpr.fit(df, (group, cell), initial_points=10)
 
@@ -175,8 +181,9 @@ def trajectory_forecast(
             'baseline_rnn':   bb,
             'pi_rnn':         pp
         }
-
+    # —————————————————————————————
     # 5. Final Plotting 
+    # —————————————————————————————
     forecast_rpts     = [1, 9, 23]
     forecast_horizons = [7, 13, 10]
     fixed_horizon     = 5
