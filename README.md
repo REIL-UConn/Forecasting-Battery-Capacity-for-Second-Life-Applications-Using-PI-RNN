@@ -6,7 +6,7 @@ This repository accompanies our published paper
 
 It contains code and data for training, evaluating, and visualizing a physics-informed recurrent neural network (PI-RNN) alongside several baselines to forecast battery capacity fade in first-life and second-life stages.
 
-![Graphical Abstract](figures/graphical_abstract.png)
+![Graphical Abstract](figures/graphical_abstract.svg)
 
 ---
 
