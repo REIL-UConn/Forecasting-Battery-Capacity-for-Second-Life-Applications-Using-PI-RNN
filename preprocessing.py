@@ -1,11 +1,11 @@
 """
 preprocessing.py
 
-Preprocessing Pipeline + Capacity Fade Plot for Batch 1 or Batch 2
+Preprocessing Pipeline + Capacity Fade Plot for Batch 1 or Batch 2
 ------------------------------------------------------------------
 
-This script processes cycling‑subfolder data and merges it with RPT capacity data
-for either Batch 1 or Batch 2, then produces a capacity‑fade plot.
+This script processes cycling-subfolder data and merges it with RPT capacity data
+for either Batch 1 or Batch 2, then produces a capacity fade plot.
 
 Usage:
     python preprocess_and_plot.py
@@ -21,10 +21,9 @@ import matplotlib.pyplot as plt
 warnings.filterwarnings('ignore')
 
 
-# =============================================================================
+# —————————————————————————————
 # CHANNEL MAPPINGS FOR EACH BATCH
-# =============================================================================
-
+# —————————————————————————————
 CHANNEL_MAPPINGS = {
     "1": {
         ('G3', 'C1'): '6-1', ('G3', 'C2'): '6-2', ('G3', 'C3'): '6-3',
@@ -49,20 +48,16 @@ CHANNEL_MAPPINGS = {
 }
 
 
-# =============================================================================
+# —————————————————————————————
 # COMMON CONFIGURATION
-# =============================================================================
-
+# —————————————————————————————
 EXCEL_FILE      = "SOH estimation aging test management_update_10-15-2024.xlsx"
 OUTPUT_DIR      = "Processed_data"
 OUTPUT_TEMPLATE = "Processed_data_Cycling&RPT_Batch{batch}_Capacity_Forecasting_merged_update_Jan2025.pkl"
 
-
-
-# =============================================================================
+# —————————————————————————————
 # UTILITIES
-# =============================================================================
-
+# —————————————————————————————
 def ensure_dir(path):
     """Create directory if it does not exist."""
     os.makedirs(path, exist_ok=True)
@@ -71,7 +66,7 @@ def ensure_dir(path):
 def calculate_ampere_hour_throughput(df):
     """
     Given a DataFrame with columns 'Date(h:min:s.ms)' and 'Current(A)', compute:
-      - ampere‑hour throughput (Ah)
+      - ampere-hour throughput (Ah)
       - total time elapsed under load (h)
       - durations below 3A, between 3A and 4A, and above 4A (h)
     """
@@ -172,10 +167,9 @@ def merge_and_save(cycle_df, rpt_df, batch):
     return out_path
 
 
-# =============================================================================
+# —————————————————————————————
 # PLOTTING
-# =============================================================================
-
+# —————————————————————————————
 def plot_capacity_fade(batch, merged_path):
     """
     Plot capacity fade (mean ± std) vs. RPT Number for each group in the batch.
@@ -214,10 +208,9 @@ def plot_capacity_fade(batch, merged_path):
     plt.show()
 
 
-# =============================================================================
+# —————————————————————————————
 # MAIN
-# =============================================================================
-
+# —————————————————————————————
 def main():
     batch = input("Enter batch number (1 or 2): ").strip()
     if batch not in CHANNEL_MAPPINGS:
