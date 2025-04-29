@@ -1,102 +1,157 @@
-# Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks
+# Forecasting Battery Capacity for Second-Life Applications  
+## Using Physics-Informed Recurrent Neural Networks
 
-This repository accompanies our published paper “Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks” (DOI: doi). It provides preprocessed data, models, and scripts used to train and evaluate PI‑RNN model and baseline methods for capacity forecasting.
+This repository accompanies our published paper  
+> **“Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks”**  
+> *(placeholder DOI)*  
 
-![graphical_abstract](figures/graphical_abstract.png)
+It contains code and data for training, evaluating, and visualizing a physics-informed RNN (PI-RNN) alongside several baselines to forecast battery capacity fade in first-life and second-life stages.
+
+![Graphical Abstract](figures/graphical_abstract.png)
 
 ---
 
-## Repository Structure
+## 🚀 Project Structure
 
-- **processed_data/**  
-  Merged cycling and RPT data for Batch 1 & 2 (Pickle files).
+```
+.
+├── processed_data/             # Preprocessed Cycling & RPT datasets (.pkl)
+├── saved_models/               # Trained model weights (.pth, .pt)
+├── simulated_PBM_data/         # Features from physics-based simulations (.pkl)
+├── data_utils.py               # Data loaders & sequence builders
+├── models.py                   # PI-RNN, baselines, PBM surrogates
+├── pbm_experiments.py          # PyBaMM simulation & feature extraction
+├── preprocessing.py            # Raw Excel → merged .pkl + capacity-fade plots
+├── RMSE_evaluation.py          # Single/multi-step RMSE & MAE evaluation
+├── training_strategies.py      # Scenario-based PI-RNN & baseline training
+├── trajectory_forecast.py      # CLI forecasting + visualization
+├── uncertainty_quantification.py # UQ trajectories & calibration curves
+├── README.md                   # This file
+└── requirements.txt            # Python dependencies required to install
+```
 
-- **saved_models/**  
-  Pretrained model checkpoints (PI‑RNN, Baseline RNN, etc.).
+---
 
-- **simulated_PBM_data/**  
-  Outputs from PyBaMM experiments and extracted simulation features.
+## 📄 Script Overviews
 
 - **data_utils.py**  
-  Functions to load, preprocess, and sequence raw battery and simulation data.
+  - Centralizes dataset paths and feature/target definitions  
+  - `load_pbm_surrogate()`, `load_batch()`, `load_battery_data()`, `make_sequences()`
 
 - **models.py**  
-  Definitions of the physics-based surrogate model (PBM), PI‑RNN architecture, baseline RNNs, model-based GPR.
+  - `train_pbm_surrogate_for_PI_RNN()` — RandomForest surrogate for capacity-drop injection  
+  - `CustomRNNCellWithSurrogate` & `MultiStepPIRNN` — physics-informed RNN  
+  - `BaselineMultiStepRNN` — standard RNN baseline  
+  - `GPRBaseline` — Gaussian Process baseline  
+  - `PBMSurrogate` — multi-step PBM surrogate class  
 
 - **pbm_experiments.py**  
-  Scripts to run PyBaMM physics-based simulations, extract features, and save simulation results.
+  - Defines PyBaMM experiments for each group  
+  - Runs CCCV/charge/RPT cycles, extracts features, saves to `simulated_PBM_data/`
 
 - **preprocessing.py**  
-  Pipeline to process raw cycling subfolder data, merge with RPT capacities, and plot capacity fade curves.
+  - Parses “Cycling n” Excel files, computes throughput/time duration features  
+  - Reads RPT capacities from master Excel, merges, saves to `processed_data/`  
+  - Plots capacity-fade curves per group
 
 - **RMSE_evaluation.py**  
-  Evaluation routines for single‑ and multi‑step RMSE/MAE comparisons among models.
+  - Trains PI-RNN, Baseline RNN, GPR, PBM surrogate   
+  - Computes and plots single-step and multi-step RMSE/MAE comparisons
 
 - **training_strategies.py**  
-  Training scenarios for fixed-horizon, recursive, and max-horizon forecasting, with optional fine‑tuning.
+  - Implements three forecasting scenarios (S1: fixed-horizon, S2: recursive, S3: maximum horizon)  
+  - Trains and saves PI-RNN and Baseline RNN for each scenario  
+  - Provides visualization 
 
 - **trajectory_forecast.py**  
-  Loading of pretrained models, forecasting trajectories, and plotting with RMSE bars.
+  - CLI to load pretrained S3 models (PI-RNN & Baseline)  
+  - (Optional) fine-tuning on first N points of a selected cell  
+  - Combines RNN & GPR forecasts, plots trajectories & RMSE bars
 
 - **uncertainty_quantification.py**  
-  Uncertainty quantification via Monte Carlo dropout, isotonic recalibration, and calibration curve plotting.
-
-- **requirements.txt**  
-  Python dependencies required to install.
+  - Loads or trains the S3 PI-RNN model with MC dropout, saves model state  
+  - Generates convex-combined prediction intervals across life phases  
+  - Fits isotonic recalibration on “C2” cells (held out calibration set), plots calibration curves
 
 ---
 
-## Quick Start
+## 🔧 Installation
 
-1. **Install dependencies**  
+1. **Clone**  
+   ```bash
+   git clone https://github.com/your-org/PI-RNN-for-Capacity-Forecasting.git
+   cd PI-RNN-for-Capacity-Forecasting
+   ```
+
+2. **Create & activate** your Python environment  
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies**  
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **Data preprocessing**  
-   Process raw cycling & RPT data and generate `processed_data/`  
+---
+
+## ▶️ Usage Examples
+
+1. **Preprocess data & plot capacity fade**  
    ```bash
    python preprocessing.py
    ```
 
-3. **Run physics-based simulations**  
-   Generate PBM features for a group (e.g., G1, G13):  
+2. **Generate PBM-simulated features**  
    ```bash
    python pbm_experiments.py
    ```
 
-4. **Train & evaluate models**  
-   - Train and evaluate PI‑RNN and baselines:  
-     ```bash
-     python RMSE_evaluation.py
-     ```
-   - Uncertainty quantification and calibration:  
-     ```bash
-     python uncertainty_quantification.py
-     ```
-   - Trajectory forecasting with pretrained models:  
-     ```bash
-     python trajectory_forecast.py --group G13 --cell C1
-     ```
+3. **Train & evaluate RMSE/MAE**  
+   ```bash
+   python RMSE_evaluation.py
+   ```
 
-5. **Training strategies**  
-   Explore different forecasting scenarios and fine‑tuning:  
+4. **Train forecasting scenarios**  
    ```bash
    python training_strategies.py
    ```
 
+5. **Interactive trajectory forecast**  
+   ```bash
+   python trajectory_forecast.py --group G13 --cell C1
+   ```
+
+6. **Uncertainty quantification & calibration curves**  
+   ```bash
+   python uncertainty_quantification.py
+   ```
+
 ---
 
-## Citation
+## 📋 Requirements
 
-If you use this code, please cite:
+See `requirements.txt` for full dependency list.
 
-```
-@article{Paper2025,
-  title={Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks},
-  author={...},
-  journal={Journal Name},
-  year={2025},
-  doi={placeholder doi}
+---
+
+## 📖 Citation
+
+Please cite our paper if you use this code:
+
+```bibtex
+@article{Navidi2025,
+  title   = {Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks},
+  author  = {...},
+  journal = {Journal Name},
+  year    = {2025},
+  doi     = {placeholder DOI}
 }
 ```
+
+---
+
+## ⚖️ License
+
+This project is licensed under the MIT License. See `LICENSE` for details.
