@@ -425,7 +425,7 @@ def run_group_by_id(group_id):
 
 
     # Save the DataFrame to a pickle file 
-    output_folder = "Simulated_PBM_data"
+    output_folder = "simulated_PBM_data"
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
     output_filename = os.path.join(output_folder, f"{group_id}_PBM_Simulated.pkl")
