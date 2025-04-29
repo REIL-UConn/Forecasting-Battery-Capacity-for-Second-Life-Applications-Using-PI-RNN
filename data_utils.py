@@ -1,3 +1,24 @@
+"""
+Utility functions for loading, preprocessing, and sequencing
+both physics-based model (PBM) simulation data and cycling/RPT
+battery datasets. 
+
+Contains:
+  - Constants defining file paths, feature and target lists.
+  - load_pbm_surrogate(): train a RandomForest surrogate on PBM pickles.
+  - load_batch(): read a pickled dataframe and compute per-step capacity drop.
+  - load_battery_data(): load, filter, split (train/val/test), and scale cycling & RPT data.
+  - make_sequences(): convert flat feature & target arrays into overlapping sequences for RNNs.
+
+Usage:
+    from data_utils import (
+        load_pbm_surrogate,
+        load_battery_data,
+        make_sequences,
+        PBM_SIM_PATHS, BATTERY_FEATURES, ...
+    )
+"""
+
 import pandas as pd
 import numpy as np
 import random
@@ -10,11 +31,11 @@ from models import train_pbm_surrogate_for_PI_RNN
 # —————————————————————————————
 # PBM pickles
 PBM_SIM_PATHS = [
-    'Simulated_PBM_data/G18_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G16_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G4_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G3_PBM_Simulated.pkl',
-    'Simulated_PBM_data/G2_PBM_Simulated.pkl'
+    'simulated_PBM_data/G18_PBM_Simulated.pkl',
+    'simulated_PBM_data/G16_PBM_Simulated.pkl',
+    'simulated_PBM_data/G4_PBM_Simulated.pkl',
+    'simulated_PBM_data/G3_PBM_Simulated.pkl',
+    'simulated_PBM_data/G2_PBM_Simulated.pkl'
 ]
 PBM_FEATURES = [
     'Ampere-Hour Throughput (Ah)',
@@ -29,8 +50,8 @@ PBM_FEATURES = [
 PBM_TARGET = 'Capacity_Drop_Ah'
 
 # cycling & RPT data
-BATCH1_PATH = 'Processed_data/Processed_data_Cycling&RPT_Batch1_Capacity_Forecasting_merged_update_Jan2025.pkl'
-BATCH2_PATH = 'Processed_data/Processed_data_Cycling&RPT_Batch2_Capacity_Forecasting_merged_update_Jan2025.pkl'
+BATCH1_PATH = 'processed_data/Processed_data_Cycling&RPT_Batch1_Capacity_Forecasting_merged_update_Jan2025.pkl'
+BATCH2_PATH = 'processed_data/Processed_data_Cycling&RPT_Batch2_Capacity_Forecasting_merged_update_Jan2025.pkl'
 
 BATTERY_FEATURES = [
     'Ampere-Hour Throughput (Ah)',

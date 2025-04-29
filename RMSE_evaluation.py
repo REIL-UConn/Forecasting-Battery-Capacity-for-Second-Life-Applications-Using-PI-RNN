@@ -1,4 +1,15 @@
-# train_evaluate.py
+"""
+Evaluate forecasting performance of PBM surrogates, GPR, Baseline RNN, and PI-RNN.
+
+This script:
+  1. Loads and preprocesses battery cycling & RPT data.
+  2. Trains a RandomForest surrogate on physics-based model (PBM) capacity-drop data.
+  3. Builds and trains:
+       • PI-RNN (Physics-Informed RNN) for multi-step forecasting (horizon=10)
+       • Baseline multi-step RNN
+  4. Evaluates **single-step** predictions and plots 2*2 scatter plots with MAE/RMSE.
+  5. Evaluates **multi-step** RMSE (horizons 2-10) for all four methods and plots a bar chart.
+"""
 
 import torch
 import torch.nn as nn

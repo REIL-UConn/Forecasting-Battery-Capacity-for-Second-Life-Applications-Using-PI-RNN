@@ -1,15 +1,20 @@
 """
-preprocessing.py
+Preprocess raw cycling and RPT Excel data for Batch 1 or Batch 2, merge into
+a single DataFrame suitable for capacity-forecasting models, and plot capacity
+fade curves.
 
-Preprocessing Pipeline + Capacity Fade Plot for Batch 1 or Batch 2
-------------------------------------------------------------------
-
-This script processes cycling-subfolder data and merges it with RPT capacity data
-for either Batch 1 or Batch 2, then produces a capacity fade plot.
+Workflow:
+  1. Map (Group,Cell) → hardware channel via CHANNEL_MAPPINGS.
+  2. process_cycling(): parse “Cycling n” subfolders, compute Ah throughput,
+     time under load, and current-level durations.
+  3. read_rpt_data(): read RPT capacity values from the SOH Excel sheet.
+  4. merge_and_save(): join cycling + RPT, pickle under processed_data/.
+  5. plot_capacity_fade(): show mean±std capacity vs RPT for each group.
+  6. main(): driver that prompts for batch (“1” or “2”) and runs all steps.
 
 Usage:
-    python preprocess_and_plot.py
-    → Enter batch number (1 or 2) when prompted.
+    $ python preprocessing.py
+    Enter batch number (1 or 2): 1
 """
 
 import os
@@ -17,7 +22,6 @@ import warnings
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
 warnings.filterwarnings('ignore')
 
 

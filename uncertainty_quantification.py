@@ -1,3 +1,9 @@
+"""
+Perform uncertainty quantification for PI-RNN capacity forecasts using MC-dropout,
+apply isotonic recalibration on a held-out calibration set, and visualize both
+trajectory prediction intervals and calibration curves.
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim

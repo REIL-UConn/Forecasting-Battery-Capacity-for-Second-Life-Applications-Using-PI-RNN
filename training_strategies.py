@@ -1,3 +1,11 @@
+"""
+Train and compare physics-informed RNN (PI-RNN) and baseline RNN across three forecasting scenarios:
+
+  • Scenario 1: Fixed 7-step horizon forecasting  
+  • Scenario 2: Recursive single-step forecasting  
+  • Scenario 3: Maximum 10-step horizon forecasting  
+"""
+
 import os
 import torch
 import torch.nn as nn

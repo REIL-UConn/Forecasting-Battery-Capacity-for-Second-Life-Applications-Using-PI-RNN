@@ -1,3 +1,36 @@
+"""
+Run and post-process PyBaMM DFN simulations for a range of fast-charge/discharge 
+protocols, extract cycling features, and save them to disk for downstream modeling.
+
+Contents:
+  • MODEL_OPTIONS, VAR_PTS, GROUPS  
+      Configuration dicts for the DFN physics options, discretization, and
+      experimental groups (charge/discharge rates, cycle counts, etc.).
+
+  • get_parameter_values()  
+      Build and tweak an OKane2022/Prada2013 ParameterValues object.
+
+  • run_experiment(), run_group_experiment()  
+      Helpers to assemble PyBaMM experiments (CCCV, RPT, ageing, derated) and
+      solve them for a given group.
+
+  • plot_results()  
+      Quick scatter of discharge capacity vs. RPT number.
+
+  • extract_features()  
+      Parse PyBaMM SolutionList objects to compute Ah throughput, time under
+      load, capacity drops, etc., returning a pandas.DataFrame. 
+
+  • run_group_by_id() / main  
+      Orchestrates a full workflow: run sims, extract features, plot, and
+      pickle the resulting DataFrame to `simulated_PBM_data/`.
+
+Usage:
+    $ python pbm_experiments.py
+    Enter the group ID ['G1','G2',…,'G18']: G3
+"""
+
+
 import pybamm
 import matplotlib.pyplot as plt
 import pickle

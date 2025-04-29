@@ -1,3 +1,39 @@
+
+"""
+Core model definitions for capacity forecasting and surrogate modeling.
+
+Modules:
+
+  • train_pbm_surrogate_for_PI_RNN
+      Train a RandomForest surrogate on PBM simulation pickles
+      (used to inject PBM capacity drop predictions
+      into the PI-RNN during training).
+
+  • CustomRNNCellWithSurrogate & MultiStepPIRNN
+      PI-RNN architecture that combines RNN hidden updates with
+      PBM surrogate injection and supports optional MC-dropout.
+
+  • BaselineMultiStepRNN
+      Simple recurrent benchmark model without physics injection.
+
+  • GPRBaseline
+      Empirical + Gaussian Process model as a baseline.
+
+  • PBMSurrogate
+      Flexible, horizon-specific PBM surrogates for
+      single-step capacity and capacity drop, plus recursive
+      multi-step forecasts.
+
+Usage:
+    from models import (
+        train_pbm_surrogate_for_PI_RNN,
+        MultiStepPIRNN,
+        BaselineMultiStepRNN,
+        GPRBaseline,
+        PBMSurrogate
+    )
+"""
+
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestRegressor
@@ -17,7 +53,7 @@ import GPy
 # —————————————————————————————
 def train_pbm_surrogate_for_PI_RNN(file_paths, sim_features, sim_target, seed=40):
     """
-    Load simulation data, fit a RandomForest surrogate.
+    Load simulation data, fit a PBM surrogate.
     Returns: (surrogate_model, scaler_sim)
     """
     # 1) load & concat

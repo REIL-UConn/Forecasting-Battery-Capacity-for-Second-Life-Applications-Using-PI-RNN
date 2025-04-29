@@ -1,3 +1,21 @@
+"""
+Generate and visualize capacity forecast trajectories and RMSE evolution
+for a chosen battery cell, using pre-trained PI-RNN, baseline RNN, and GPR models.
+
+- Produce a 2*3 grid:
+   • Top row: true vs. predicted trajectories in three “life phases”  
+   • Bottom row: RMSE (log-scale) as a function of RPT origin (5-step forecast RMSE)  
+9. Supports CLI flags:
+   --group, --cell        : choose which cell to forecast  
+   --fine-tune            : enable short fine-tuning  
+   --epochs               : number of fine-tune epochs  
+   --return-predictions   : output raw arrays instead of plotting  
+
+Usage:
+    python trajectory_forecast.py --group G13 --cell C1 [--fine-tune] [--epochs 20]
+"""
+
+
 import argparse
 import torch
 import torch.nn as nn
