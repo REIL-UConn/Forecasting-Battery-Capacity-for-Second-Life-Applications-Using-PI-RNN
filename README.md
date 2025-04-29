@@ -1,8 +1,8 @@
 # Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks
 
-This repository accompanies our published paper “Physics-Informed Recurrent Neural Networks for Battery Capacity Forecasting” (DOI: placeholder doi). It provides data, models, and scripts used to train and evaluate PI‑RNN models, hybrid physics‑informed approaches, and baseline methods for capacity prediction and uncertainty quantification.
+This repository accompanies our published paper “Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks” (DOI: doi). It provides preprocessed data, models, and scripts used to train and evaluate PI‑RNN model and baseline methods for capacity forecasting.
 
-![Example Forecast Trajectories](figures/trajectory_example.png)
+![graphical_abstract](figures/graphical_abstract.png)
 
 ---
 
@@ -21,7 +21,7 @@ This repository accompanies our published paper “Physics-Informed Recurrent Ne
   Functions to load, preprocess, and sequence raw battery and simulation data.
 
 - **models.py**  
-  Definitions of surrogate models, PI‑RNN architecture, baseline RNNs, GPR and PBM surrogates.
+  Definitions of the physics-based surrogate model (PBM), PI‑RNN architecture, baseline RNNs, model-based GPR.
 
 - **pbm_experiments.py**  
   Scripts to run PyBaMM physics-based simulations, extract features, and save simulation results.
@@ -36,13 +36,13 @@ This repository accompanies our published paper “Physics-Informed Recurrent Ne
   Training scenarios for fixed-horizon, recursive, and max-horizon forecasting, with optional fine‑tuning.
 
 - **trajectory_forecast.py**  
-  Loading of pretrained models, forecasting trajectories, optional fine‑tuning, and plotting with RMSE bars.
+  Loading of pretrained models, forecasting trajectories, and plotting with RMSE bars.
 
 - **uncertainty_quantification.py**  
   Uncertainty quantification via Monte Carlo dropout, isotonic recalibration, and calibration curve plotting.
 
 - **requirements.txt**  
-  Python dependencies for reproducing results.
+  Python dependencies required to install.
 
 ---
 
@@ -87,19 +87,13 @@ This repository accompanies our published paper “Physics-Informed Recurrent Ne
 
 ---
 
-## Figures
-
-Examples of trajectory forecasts and calibration curves are stored in `figures/`. Please replace placeholder images with final publication figures.
-
----
-
 ## Citation
 
 If you use this code, please cite:
 
 ```
-@article{YourPaper2025,
-  title={Physics-Informed Recurrent Neural Networks for Battery Capacity Forecasting},
+@article{Paper2025,
+  title={Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks},
   author={...},
   journal={Journal Name},
   year={2025},
