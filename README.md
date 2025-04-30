@@ -14,19 +14,18 @@ It contains code and data for training, evaluating, and visualizing a physics-in
 
 ```
 .
-├── processed_data/             # Preprocessed Cycling & RPT datasets (.pkl)
-├── saved_models/               # Trained model weights (.pth, .pt)
-├── simulated_PBM_data/         # Physics-based simulations and feature extraction from them (.pkl)
-├── data_utils.py               # Data loaders & sequence builders
-├── models.py                   # PI-RNN, baselines, PBM surrogates
-├── pbm_experiments.py          # PyBaMM simulation & feature extraction
-├── preprocessing.py            # Raw Excel → merged .pkl + capacity fade plots
-├── RMSE_evaluation.py          # Single/multi-step RMSE & MAE evaluation
-├── training_strategies.py      # Scenario-based PI-RNN & baseline RNN training
-├── trajectory_forecast.py      # CLI trajectory forecasting visualization
+├── processed_data/               # Preprocessed Cycling & RPT datasets (.pkl)
+├── saved_models/                 # Trained model weights (.pth, .pt)
+├── simulated_PBM_data/           # Physics-based simulations and feature extraction from them (.pkl)
+├── data_utils.py                 # Data loaders & sequence builders
+├── models.py                     # PI-RNN, baselines, PBM surrogates
+├── pbm_experiments.py            # PyBaMM simulation & feature extraction
+├── preprocessing.py              # Raw Excel → merged .pkl + capacity fade plots
+├── RMSE_evaluation.py            # Single/multi-step RMSE & MAE evaluation
+├── training_strategies.py        # Scenario-based PI-RNN & baseline RNN training
+├── trajectory_forecast.py        # CLI trajectory forecasting visualization
 ├── uncertainty_quantification.py # UQ interval trajectories & calibration curves
-├── README.md                   # This file
-└── requirements.txt            # Python dependencies required to install
+└── requirements.txt              # Python dependencies required to install
 ```
 
 ---
