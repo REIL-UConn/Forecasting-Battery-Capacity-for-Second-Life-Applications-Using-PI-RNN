@@ -174,16 +174,27 @@ def visualize_all_scenarios(
         b1_, b2_, b3_ = b1, b2, b3
 
     df = test_df[(test_df['Group']==Group)&(test_df['Cell']==Cell)].copy()
-    df.sort_values('RPT Number', inplace=True)
-    df.reset_index(drop=True, inplace=True)
+    rpts = df['RPT Number']
+    min_rpt, max_rpt = rpts.min(), rpts.max()
 
-    if 23 not in df['RPT Number'].values and {22,24}.issubset(df['RPT Number'].values):
-        v22 = df.loc[df['RPT Number']==22, target].item()
-        v24 = df.loc[df['RPT Number']==24, target].item()
-        extra = pd.DataFrame({'RPT Number':[23], target:[(v22+v24)/2]})
-        df = pd.concat([df, extra], ignore_index=True)
-        df.sort_values('RPT Number', inplace=True)
-        df.reset_index(drop=True, inplace=True)
+    # find missing RPT numbers in the [min, max] range if any
+    full_set = set(range(min_rpt, max_rpt + 1))
+    missing = sorted(full_set - set(rpts))
+
+    to_add = []
+    for m in missing:
+        prev_r, next_r = m - 1, m + 1
+        if prev_r in rpts.values and next_r in rpts.values:
+            v_prev = df.loc[df['RPT Number'] == prev_r, target].iloc[0]
+            v_next = df.loc[df['RPT Number'] == next_r, target].iloc[0]
+            to_add.append({
+                'RPT Number': m,
+                target:       (v_prev + v_next) / 2
+            })
+
+    if to_add:
+        df = pd.concat([df, pd.DataFrame(to_add)], ignore_index=True)
+        df = df.sort_values('RPT Number').reset_index(drop=True)
 
     avail = df[df['RPT Number'] <= forecast_rpt]
     fut   = df[df['RPT Number'] >  forecast_rpt]
@@ -322,6 +333,6 @@ if __name__ == '__main__':
         target            = target,
         Group             = 'G3',
         Cell              = 'C1',
-        return_predictions= True,
+        return_predictions= False,
         fine_tune         = False
     )

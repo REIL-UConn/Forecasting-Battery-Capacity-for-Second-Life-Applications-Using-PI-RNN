@@ -101,14 +101,29 @@ def trajectory_forecast(
     )
     df[BATTERY_FEATURES] = df[BATTERY_FEATURES].fillna(0)
 
-    # insert missing RPT=23 if needed
-    if 23 not in df['RPT Number'].values and {22,24}.issubset(df['RPT Number'].values):
-        v22 = df.loc[df['RPT Number']==22, BATTERY_TARGET].item()
-        v24 = df.loc[df['RPT Number']==24, BATTERY_TARGET].item()
-        extra = pd.DataFrame({'RPT Number':[23], BATTERY_TARGET:[(v22+v24)/2]})
-        df = pd.concat([df, extra], ignore_index=True) \
-               .sort_values('RPT Number') \
-               .reset_index(drop=True)
+    # --- fill any single‐gap RPT numbers by neighbor‐averaging ---
+    rpts = df['RPT Number']
+    min_rpt, max_rpt = rpts.min(), rpts.max()
+
+    full_set = set(range(min_rpt, max_rpt + 1))
+    missing_rpts = sorted(full_set - set(rpts))
+
+    # for each missing rpt, if both neighbors exist, interpolate
+    to_add = []
+    for m in missing_rpts:
+        prev_r, next_r = m - 1, m + 1
+        if prev_r in rpts.values and next_r in rpts.values:
+            v_prev = df.loc[df['RPT Number'] == prev_r, BATTERY_TARGET].iloc[0]
+            v_next = df.loc[df['RPT Number'] == next_r, BATTERY_TARGET].iloc[0]
+            to_add.append({
+                'RPT Number': m,
+                BATTERY_TARGET: (v_prev + v_next) / 2
+            })
+
+    # append & re‐sort only if there’s something to add
+    if to_add:
+        df = pd.concat([df, pd.DataFrame(to_add)], ignore_index=True)
+        df = df.sort_values('RPT Number').reset_index(drop=True)
 
     # available and future splits for scenario 3 forecasting
     avail = df[df['RPT Number'] <= h3]
@@ -327,7 +342,7 @@ def trajectory_forecast(
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--group', type=str, default='G13')
+    parser.add_argument('--group', type=str, default='G3')
     parser.add_argument('--cell',  type=str, default='C1')
     parser.add_argument('--fine-tune', action='store_true')
     parser.add_argument('--epochs',    type=int,   default=20)
