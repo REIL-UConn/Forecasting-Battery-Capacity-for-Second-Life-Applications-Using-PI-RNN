@@ -320,7 +320,7 @@ if __name__ == '__main__':
         scaler            = scaler,
         features          = features,
         target            = target,
-        Group             = 'G15',
+        Group             = 'G3',
         Cell              = 'C1',
         return_predictions= True,
         fine_tune         = False

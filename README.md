@@ -16,7 +16,7 @@ It contains code and data for training, evaluating, and visualizing a physics-in
 .
 ├── processed_data/               # Preprocessed Cycling & RPT datasets (.pkl)
 ├── saved_models/                 # Trained model weights (.pth, .pt)
-├── simulated_PBM_data/           # Physics-based simulations and feature extraction from them (.pkl)
+├── simulated_PBM_data/           # Selected physics-based simulations and feature extraction from them (.pkl)
 ├── data_utils.py                 # Data loaders & sequence builders
 ├── models.py                     # PI-RNN, baselines, PBM surrogates
 ├── pbm_experiments.py            # PyBaMM simulation & feature extraction
