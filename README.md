@@ -4,7 +4,7 @@ This repository accompanies our published paper
 > **“Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks”**  
 > *(placeholder DOI)*  
 
-It contains code and data for training, evaluating, and visualizing a physics-informed recurrent neural network (PI-RNN) alongside several baselines to forecast battery capacity fade in first-life and second-life stages.
+It contains code and processed data for training, evaluating, and visualizing a physics-informed recurrent neural network (PI-RNN) alongside several baselines to forecast battery capacity fade in first- and second-life phases.
 
 ![Graphical Abstract](figures/graphical_abstract.png)
 
@@ -14,18 +14,30 @@ It contains code and data for training, evaluating, and visualizing a physics-in
 
 ```
 .
-├── processed_data/               # Preprocessed Cycling & RPT datasets (.pkl)
-├── saved_models/                 # Trained model weights (.pth, .pt)
-├── simulated_PBM_data/           # Selected physics-based simulations and feature extraction from them (.pkl)
-├── data_utils.py                 # Data loaders & sequence builders
-├── models.py                     # PI-RNN, baselines, PBM surrogates
-├── pbm_experiments.py            # PyBaMM simulation & feature extraction
-├── preprocessing.py              # Raw Excel → merged .pkl + capacity fade plots
-├── RMSE_evaluation.py            # Single/multi-step RMSE & MAE evaluation
-├── training_strategies.py        # Scenario-based PI-RNN & baseline RNN training
-├── trajectory_forecast.py        # CLI trajectory forecasting visualization
-├── uncertainty_quantification.py # UQ interval trajectories & calibration curves
-└── requirements.txt              # Python dependencies required to install
+├── processed_data/               # Preprocessed Cycling & RPT datasets
+│   ├── Batch1.pkl                # Processed data from Batch 1
+│   └── Batch2.pkl                # Processed data from Batch 2
+│                                 # (original filenames: Processed_data_Cycling&RPT_Batch1/2_Capacity_Forecasting_merged_update_Jan2025.pkl)
+├── saved_models/                 # Trained model weights
+│   ├── b3_scenario3.pth          # Baseline RNN trained on Scenario 3
+│   ├── pi_rnn_scenario3.pth      # PI-RNN trained on Scenario 3
+│   └── pi_rnn_s3_mc_dropout.pth  # PI-RNN with MC Dropout for uncertainty quantification
+├── simulated_PBM_data/           # Physics-based simulations & extracted features (top-performing groups in test set)
+│   ├── G2_PBM_Simulated.pkl
+│   ├── G3_PBM_Simulated.pkl
+│   ├── G4_PBM_Simulated.pkl
+│   ├── G16_PBM_Simulated.pkl
+│   └── G18_PBM_Simulated.pkl
+├── data_utils.py                 # Data loaders and input sequence builders
+├── models.py                     # PI-RNN, baseline RNNs, and PBM surrogate models
+├── pbm_experiments.py            # PyBaMM-based simulation and feature extraction
+├── preprocessing.py              # Raw Excel → merged .pkl conversion + capacity fade plotting
+├── RMSE_evaluation.py            # RMSE & MAE computation for single/multi-step forecasts
+├── training_strategies.py        # Scenario-based training pipelines for PI-RNN and baselines
+├── trajectory_forecast.py        # CLI-based visualization of capacity trajectory forecasts
+├── uncertainty_quantification.py # UQ: prediction intervals + calibration curve evaluation
+└── requirements.txt              # Required Python dependencies
+
 ```
 
 ---
@@ -37,27 +49,27 @@ It contains code and data for training, evaluating, and visualizing a physics-in
   - `load_pbm_surrogate()`, `load_batch()`, `load_battery_data()`, `make_sequences()`
 
 - **models.py**  
-  - `train_pbm_surrogate_for_PI_RNN()` — RandomForest surrogate for capacity-drop injection  
+  - `train_pbm_surrogate_for_PI_RNN()` — PBM surrogate for capacity-drop injection (random forest)  
   - `CustomRNNCellWithSurrogate` & `MultiStepPIRNN` — physics-informed RNN  
   - `BaselineMultiStepRNN` — standard RNN baseline  
-  - `GPRBaseline` — Gaussian Process baseline  
-  - `PBMSurrogate` — multi-step PBM surrogate class  
+  - `GPRBaseline` — model-based Gaussian process baseline  
+  - `PBMSurrogate` — PBM surrogate model class  
 
 - **pbm_experiments.py**  
   - Defines PyBaMM experiments for each group  
-  - Runs CCCV/charge/RPT cycles, extracts features, saves to `simulated_PBM_data/`
+  - Runs cycling/RPT, extracts features, saves to `simulated_PBM_data/`
 
 - **preprocessing.py**  
   - Parses “Cycling n” Excel files, computes throughput/time duration features  
   - Reads RPT capacities from master Excel, merges, saves to `processed_data/`  
-  - Plots capacity fade curves per group
+  - Plots capacity fade per group 
 
 - **RMSE_evaluation.py**  
   - Trains PI-RNN, Baseline RNN, GPR, PBM surrogate   
   - Computes and plots single-step and multi-step RMSE/MAE comparisons
 
 - **training_strategies.py**  
-  - Implements three forecasting scenarios (S1: fixed-horizon, S2: recursive, S3: maximum horizon)  
+  - Implements three forecasting scenarios (S1: fixed horizon, S2: recursive, S3: maximum horizon)  
   - Trains and saves PI-RNN and Baseline RNN for each scenario  
   - Provides visualization 
 
