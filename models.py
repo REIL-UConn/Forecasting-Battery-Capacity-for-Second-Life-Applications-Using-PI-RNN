@@ -184,8 +184,7 @@ class BaselineMultiStepRNN(nn.Module):
 # —————————————————————————————
 class GPRBaseline:
     def __init__(self, initial_points=9):
-        # number of initial points to fit the empirical + GPR
-        self.initial_points   = initial_points  
+        self.initial_points   = initial_points
         self.empirical_params = {}
         self.gpr_models       = {}
 
@@ -193,63 +192,72 @@ class GPRBaseline:
     def empirical_model(x, a, b, c):
         return a + b * np.exp(c * x)
 
-    def fit(self, cell_data, cell_key, initial_points=None):
-        """Fit empirical + GPR on the first `initial_points` cycles."""
-        ip = initial_points or self.initial_points
+    def fit(self, cell_data, cell_key):
+        # Force consistent key ordering: (Cell, Group)
+        cell_key = (cell_key[0], cell_key[1])
+        ip = self.initial_points
+
         cell_data = cell_data.sort_values('RPT Number')
-        train_df  = cell_data.iloc[:ip]
+        first_9 = cell_data.iloc[:ip]
+        X_train = first_9[['RPT Number']].values.flatten()
+        y_train = first_9['Capacity'].values
 
-        X_train = train_df[['RPT Number']].values.flatten()
-        y_train = train_df['Capacity'].values
+        try:
+            popt, _ = curve_fit(
+                self.empirical_model,
+                X_train,
+                y_train,
+                p0=[np.mean(y_train), -1, -0.1],
+                # bounds=([-10, -10, -10], [10, 10, 10]),
+                maxfev=10000
+            )
+        except RuntimeError:
+            popt = [np.mean(y_train), 0, 0]
 
-        # 1) empirical fit on first ip points
-        popt, _ = curve_fit(
-            self.empirical_model,
-            X_train, y_train,
-            p0=[np.mean(y_train), -1, -0.1],
-            bounds=([-10, -10, -10], [10, 10, 10]),
-            maxfev=10000
-        )
         self.empirical_params[cell_key] = popt
 
-        # 2) fit GPR on residuals of those ip points
-        y_emp_train = self.empirical_model(X_train, *popt)
-        resid_train = (y_train - y_emp_train).reshape(-1, 1)
-
+        residuals = y_train - self.empirical_model(X_train, *popt)
         kernel = GPy.kern.RBF(input_dim=1, variance=1.0, lengthscale=1.0)
-        gpr   = GPy.models.GPRegression(
-                    X_train.reshape(-1,1), resid_train, kernel
-                )
+        gpr = GPy.models.GPRegression(X_train[:, None], residuals[:, None], kernel)
         gpr.optimize()
 
         self.gpr_models[cell_key] = gpr
 
-    def predict(self, cell_data, cell_key, initial_points=None):
-        """Return full-length forecast beyond initial_points."""
-        ip = initial_points or self.initial_points
-        cell_data      = cell_data.sort_values('RPT Number')
-        forecast_df    = cell_data.iloc[ip:]
-        rpt_vals       = forecast_df['RPT Number'].values.reshape(-1,1)
-        y_true         = forecast_df['Capacity'].values
+    def predict(self, cell_data, cell_key):
+        cell_key = (cell_key[0], cell_key[1])
+        ip = self.initial_points
+
+        forecast_data = cell_data.sort_values('RPT Number').iloc[ip:]
+        rpt_vals = forecast_data['RPT Number'].values
+        y_true   = forecast_data['Capacity'].values
 
         popt = self.empirical_params[cell_key]
-        y_emp = self.empirical_model(rpt_vals.flatten(), *popt)
-        gpr   = self.gpr_models[cell_key]
-        resid_pred, _ = gpr.predict(rpt_vals)
+        emp_preds = self.empirical_model(rpt_vals, *popt)
+        gpr = self.gpr_models[cell_key]
+        res_preds, _ = gpr.predict(rpt_vals[:, None])
 
-        y_pred = y_emp + resid_pred.flatten()
-        return y_true, y_pred
+        return y_true, emp_preds + res_preds.flatten()
 
-    def predict_horizon(self, cell_data, cell_key, steps, initial_points=None):
-        """
-        Return only the first `steps` points from predict().
-        e.g. for steps=3, returns y_true[:3], y_pred[:3].
-        """
-        y_true_full, y_pred_full = self.predict(
-            cell_data, cell_key, initial_points
-        )
-        # if fewer than `steps` points exist, it simply returns all of them
-        return y_true_full[:steps], y_pred_full[:steps]
+    def predict_horizon(self, cell_data, cell_key, steps):
+        cell_key = (cell_key[0], cell_key[1])
+        ip = self.initial_points
+
+        cell_data = cell_data.sort_values('RPT Number')
+        if len(cell_data) < ip + steps:
+            return [], []
+
+        rpt_vals = cell_data['RPT Number'].values[ip:ip+steps]
+        y_true = cell_data['Capacity'].values[ip:ip+steps]
+
+        popt = self.empirical_params[cell_key]
+        emp_preds = self.empirical_model(rpt_vals, *popt)
+        gpr = self.gpr_models[cell_key]
+        res_preds, _ = gpr.predict(rpt_vals[:, None])
+
+        return y_true, emp_preds + res_preds.flatten()
+
+
+
 
 # —————————————————————————————
 ### PBM Surrogate
@@ -334,20 +342,24 @@ class PBMSurrogate:
 
     def predict_capacity_multi(self, df, steps):
         """
-        Recursive multi-step capacity forecast:
-        capacity_pred[t+steps] = capacity_true[t] - sum_{j=0..steps-1} drop_pred[t+j]
-        Returns a length-(len(df)-steps) array aligned to df.Capacity.values[steps:].
+        Use the horizon-specific drop model to predict the drop at t+steps,
+        then reconstruct capacity as cap[t] - drop_pred.
         """
+        scaler_h = self.scalers_h[steps]
+        model_h  = self.models_h[steps]
+
         caps = df[self.capacity_target].values
         n    = len(df)
         y_pred = []
-        for i in range(steps, n):
-            cap_est = caps[i-steps]
-            for j in range(steps):
-                row = df[self.features].iloc[i-steps+j : i-steps+j+1]
-                cap_est -= self.model_drop.predict(self.scaler_drop.transform(row))
-            y_pred.append(cap_est)
+        for i in range(n - steps):
+            block = df[self.features].iloc[i : i+steps].values.flatten()
+            drop_pred = model_h.predict(
+                scaler_h.transform(block.reshape(1, -1))
+            )[0]
+            y_pred.append(caps[i] - drop_pred)
+
         return np.array(y_pred)
+
 
 
 
