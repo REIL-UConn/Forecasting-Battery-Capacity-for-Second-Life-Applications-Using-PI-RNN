@@ -19,9 +19,9 @@ It contains code and processed data for training, evaluating, and visualizing a 
 │   └── Batch2.pkl                # Processed data from Batch 2
 │                                 # (original filenames: Processed_data_Cycling&RPT_Batch1/2_Capacity_Forecasting_merged_update_Jan2025.pkl)
 ├── saved_models/                 # Trained model weights
-│   ├── b3_scenario3.pth          # Baseline RNN trained on Scenario 3
-│   ├── pi_rnn_scenario3.pth      # PI-RNN trained on Scenario 3
-│   └── pi_rnn_s3_mc_dropout.pth  # PI-RNN with MC Dropout for uncertainty quantification
+│   ├── b3_scenario3.pth          # Baseline RNN trained on scenario 3
+│   ├── pi_rnn_scenario3.pth      # PI-RNN trained on scenario 3
+│   └── pi_rnn_s3_mc_dropout.pth  # PI-RNN with MC dropout for uncertainty quantification
 ├── simulated_PBM_data/           # Physics-based simulations & extracted features (top-performing groups in test set)
 │   ├── G2_PBM_Simulated.pkl
 │   ├── G3_PBM_Simulated.pkl
