@@ -23,7 +23,6 @@ import pandas as pd
 import numpy as np
 import random
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.ensemble import RandomForestRegressor
 from models import train_pbm_surrogate_for_PI_RNN
 
 # —————————————————————————————

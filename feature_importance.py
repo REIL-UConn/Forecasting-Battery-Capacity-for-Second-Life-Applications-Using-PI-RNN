@@ -1,4 +1,6 @@
-# feature_analysis.py
+"""
+This script generates feature importance summary plot using SHAP analysis. 
+"""
 
 import random
 import numpy as np
@@ -6,7 +8,6 @@ import pandas as pd
 import shap
 import lightgbm as lgb
 import matplotlib.pyplot as plt
-
 from data_utils import load_batch, BATCH1_PATH, BATCH2_PATH, BATTERY_FEATURES
 
 # —————————————————————————————
@@ -20,7 +21,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 
 # —————————————————————————————
-# 1. Load and Prepare Data
+# 1. Load and Prepare Input Features
 # —————————————————————————————
 def prepare_training_data(seed=40):
     # Load raw batches
@@ -48,10 +49,9 @@ training_df, test_df = prepare_training_data(seed=SEED)
 # —————————————————————————————
 # 2. Feature Selection
 # —————————————————————————————
-# Exclude RPT Number
 original_features = [f for f in BATTERY_FEATURES if f != "RPT Number"]
 
-# Pretty feature names for SHAP plot
+# Feature names for SHAP plot
 pretty_names = [
     'Ampere-Hour Throughput (Ah)', 
     'Total Time Elapsed From Start (h)', 
