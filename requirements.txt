@@ -7,3 +7,4 @@ scipy>=1.6.0
 pybamm==24.11.2
 GPy>=1.10.0
 openpyxl>=3.0.0
+shap>=0.41.0
