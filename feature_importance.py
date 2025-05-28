@@ -3,33 +3,56 @@
 import random
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import shap
 import lightgbm as lgb
 import matplotlib.pyplot as plt
 
-from data_utils import load_battery_data, BATTERY_FEATURES, make_sequences
-import data_utils
+from data_utils import load_batch, BATCH1_PATH, BATCH2_PATH, BATTERY_FEATURES
 
 # —————————————————————————————
-# 0. Settings & Reproducibility
+# 0. Plotting and Seed Settings
 # —————————————————————————————
 plt.rcParams["font.family"] = "Times New Roman"
-plt.rcParams["font.size"]   = 16
+plt.rcParams["font.size"] = 16
 
 SEED = 40
 random.seed(SEED)
 np.random.seed(SEED)
 
-# Use 'capacity_drop' as target
-data_utils.BATTERY_TARGET = "capacity_drop"
-forecast_steps = 1
+# —————————————————————————————
+# 1. Load and Prepare Data
+# —————————————————————————————
+def prepare_training_data(seed=40):
+    # Load raw batches
+    df1 = load_batch(BATCH1_PATH)
+    df2 = load_batch(BATCH2_PATH)
 
-# Select features to use
-selected_features = [f for f in BATTERY_FEATURES if f != "RPT Number"]
+    # Filter test/train based on group criteria
+    test_df = df1[~df1['Group'].isin(['G12'])].dropna()
+    train_df = df2[~df2['Group'].isin(['G11', 'G14'])].dropna()
 
-# Pretty names for SHAP plot
-new_feature_names = [
+    # Restrict to cells C1 and C3
+    train_df = train_df[train_df['Cell'].isin(['C1', 'C3'])].copy()
+    train_df["Unique_Cell_ID"] = train_df["Group"] + "-" + train_df["Cell"]
+
+    unique_ids = train_df["Unique_Cell_ID"].unique()
+    random.seed(seed)
+    val_ids = random.sample(list(unique_ids), 3)
+
+    # Return only training portion
+    training_df = train_df[~train_df["Unique_Cell_ID"].isin(val_ids)].copy()
+    return training_df, test_df
+
+training_df, test_df = prepare_training_data(seed=SEED)
+
+# —————————————————————————————
+# 2. Feature Selection
+# —————————————————————————————
+# Exclude RPT Number
+original_features = [f for f in BATTERY_FEATURES if f != "RPT Number"]
+
+# Pretty feature names for SHAP plot
+pretty_names = [
     'Ampere-Hour Throughput (Ah)', 
     'Total Time Elapsed From Start (h)', 
     'Time Under Load (h)',  
@@ -37,43 +60,30 @@ new_feature_names = [
     'Time Duration Between 3A and 4A (h)',  
     'Time Duration Above 4A (h)'
 ]
-feature_mapping = dict(zip(selected_features, new_feature_names))
-feature_indices = [selected_features.index(f) for f in selected_features]
+feature_mapping = dict(zip(original_features, pretty_names))
+
+X_train = training_df[original_features]
+y_train = training_df['capacity_drop']
+X_test  = test_df[original_features]
 
 # —————————————————————————————
-# 1. Load and preprocess data
-# —————————————————————————————
-X_train_s, y_train, X_val_s, y_val, X_test_s, y_test, scaler, test_df = load_battery_data(seed=SEED)
-
-# Sequence targets
-_, y_train_seq = make_sequences(X_train_s, y_train, forecast_steps)
-_, y_test_seq  = make_sequences(X_test_s,  y_test,  forecast_steps)
-y_train_seq = y_train_seq[:, 0]
-y_test_seq  = y_test_seq[:, 0]
-
-# Inverse transform features for interpretability
-X_train_orig = scaler.inverse_transform(X_train_s)
-X_test_orig  = scaler.inverse_transform(X_test_s)
-
-X_train_df = pd.DataFrame(X_train_orig[:len(y_train_seq)][:, feature_indices], columns=selected_features)
-X_test_df  = pd.DataFrame(X_test_orig[:len(y_test_seq)][:, feature_indices],  columns=selected_features)
-
-# —————————————————————————————
-# 2. SHAP Feature Importance with LightGBM
+# 3. Train Model and Compute SHAP
 # —————————————————————————————
 model = lgb.LGBMRegressor()
-model.fit(X_train_df, y_train_seq)
+model.fit(X_train, y_train)
 
-explainer = shap.Explainer(model, X_train_df)
-shap_values = explainer(X_test_df)
+explainer = shap.Explainer(model, X_train)
+shap_values = explainer(X_test)
 
 mean_abs_shap = np.abs(shap_values.values).mean(axis=0)
 feature_importance = pd.DataFrame({
-    'Feature': [feature_mapping[feat] for feat in selected_features],
+    'Feature': [feature_mapping[f] for f in original_features],
     'Mean Absolute SHAP Value': mean_abs_shap
 }).sort_values('Mean Absolute SHAP Value', ascending=False)
 
-# Plot bar chart
+# —————————————————————————————
+# 4. Plot SHAP Summary
+# —————————————————————————————
 plt.figure(figsize=(10, 3))
 colors = plt.cm.Purples(np.linspace(0.8, 0.4, len(feature_importance)))
 
@@ -86,7 +96,7 @@ plt.barh(
 )
 plt.gca().invert_yaxis()
 plt.xlabel('Mean Absolute SHAP Value (-)', fontsize=16, fontweight='bold')
-plt.xticks([0,0.005,0.01,0.015,0.02,0.025], fontsize=14)
+plt.xticks([0, 0.005, 0.01, 0.015, 0.02, 0.025], fontsize=14)
 plt.xlim([0, 0.025])
 plt.yticks(fontsize=14)
 plt.grid(axis='x', linestyle='--', alpha=0.5)
