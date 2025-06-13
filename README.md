@@ -4,7 +4,7 @@ This repository accompanies our published paper
 > **“Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks”**  
 > *(placeholder DOI)*  
 
-It contains code and processed data for training, evaluating, and visualizing a physics-informed recurrent neural network (PI-RNN) alongside several baselines to forecast battery capacity fade in first- and second-life phases.
+It contains code and processed data for training, evaluating, and visualizing a physics-informed recurrent neural network (PI-RNN) alongside several baselines to forecast battery capacity fade in first- and second-life phases. The raw data is available at: *(placeholder link to raw data)*
 
 ![Graphical Abstract](figures/graphical_abstract.png)
 
