@@ -151,11 +151,12 @@ See `requirements.txt` for full dependency list.
 Please cite our paper if you use this code:
 
 ```bibtex
-@article{
-  title   = {Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks},
-  author  = {S. Navidi et al.},
-  journal = {eTransportation},
-  year    = {2025},
-  doi     = {placeholder DOI}
+@article{navidi2025forecasting,
+  title={Forecasting battery capacity for second-life applications using physics-informed recurrent neural networks},
+  author={Navidi, Sina and Bajarunas, Kristupas and Chao, Manuel Arias and Hu, Chao},
+  journal={eTransportation},
+  pages={100432},
+  year={2025},
+  publisher={Elsevier}
 }
 ```
