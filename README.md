@@ -153,15 +153,9 @@ Please cite our paper if you use this code:
 ```bibtex
 @article{Navidi2025,
   title   = {Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks},
-  author  = {...},
-  journal = {Journal Name},
+  author  = {S. Navidi et al.},
+  journal = {eTransportation},
   year    = {2025},
   doi     = {placeholder DOI}
 }
 ```
-
----
-
-## ⚖️ License
-
-This project is licensed under the MIT License. See `LICENSE` for details.
