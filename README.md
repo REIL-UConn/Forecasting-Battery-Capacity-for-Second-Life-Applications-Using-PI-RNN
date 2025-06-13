@@ -151,7 +151,7 @@ See `requirements.txt` for full dependency list.
 Please cite our paper if you use this code:
 
 ```bibtex
-@article{Navidi2025,
+@article{
   title   = {Forecasting Battery Capacity for Second-Life Applications Using Physics-Informed Recurrent Neural Networks},
   author  = {S. Navidi et al.},
   journal = {eTransportation},
