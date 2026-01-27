@@ -414,9 +414,9 @@ def run_group_by_id(group_id: str) -> pd.DataFrame:
 
     df = extract_features(group_id, cccv_sols, charge_sols, rpt_sols, rpt_capacities, M1)
 
-    out_dir = Path("CaseStudy2_Saved_Data")
+    out_dir = Path("simulated_PBM_data")
     out_dir.mkdir(parents=True, exist_ok=True)
-    output_filename = out_dir / f"par_reversible_plating_{group_id}_features.pkl"
+    output_filename = out_dir / f"{group_id}_PBM_Simulated.pkl"
     df.to_pickle(output_filename)
     logger.info("Saved features: %s", output_filename)
 
